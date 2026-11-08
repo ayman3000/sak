@@ -1,5 +1,12 @@
 # sak
 
+<p>
+  <img src="https://img.shields.io/badge/status-alpha-yellow" alt="Alpha">
+  <img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/Swift-6.2-orange" alt="Swift 6.2">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+</p>
+
 **A coding agent for your terminal, written in Swift.** Chat with it, pipe into it, or run it in CI. It reads your code, edits files, runs commands and searches the web — asking before it changes anything.
 
 `sak` is built on [SwiftAgentKit](https://github.com/ayman3000/SwiftAgentKit), the open-source engine behind [Naseem](https://naseemformac.com), the AI agent for Mac.
@@ -162,6 +169,10 @@ For the iOS Simulator, Mac app control, sub-agents and a reviewer in a real Mac 
 ## Build your own
 
 `sak` is about 1,400 lines of Swift on top of SwiftAgentKit, and it's meant to be read as an example of a real agent. Start at [`Sources/sak/Session.swift`](Sources/sak/Session.swift): it builds the agent, its tools and its approval prompt.
+
+## Status
+
+`sak` is **alpha** (0.2.0-alpha). Commands, flags and the `--json` fields may change before 1.0. It's been tested day to day with Ollama. The Anthropic, OpenAI, Gemini and OpenRouter providers use the same code but have had less real-world testing. Please [report anything that breaks](https://github.com/ayman3000/sak/issues).
 
 ## License
 

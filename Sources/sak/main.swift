@@ -11,7 +11,7 @@
 import Foundation
 import SwiftAgentKit
 
-let version = "0.2.0"
+let version = "0.2.0-alpha"
 
 // MARK: - Arguments
 
