@@ -159,7 +159,7 @@ Keys from `.env` files stay inside `sak`: they aren't put in the environment, so
 
 If you use [Naseem](https://naseemformac.com), `sak` shares what it knows:
 
-- **Project notes.** Naseem keeps `naseem/project.md`, `rules.md`, `roadmap.md` and `journal.md` in a project. `sak` follows those rules, sees the open roadmap items, and adds a `[sak]` line to the journal after each request — so Naseem knows what you did in the terminal, and the other way round.
+- **Project notes.** Naseem keeps `naseem/project.md`, `rules.md`, `roadmap.md` and `journal.md` in a project. `sak` follows those rules, sees the open roadmap items, and adds a line to the journal when it changed something (in Naseem's own `[build]` format, marked `sak:`) — so Naseem knows what you did in the terminal, and the other way round. A question answered leaves no entry.
 - **Skills.** Naseem's skills are available in `sak` too. Skills `sak` learns go to `~/.config/sak/skills`; it never changes Naseem's.
 
 A typical day: plan a feature with Naseem, fix a failing test with `sak` in the terminal, then let Naseem pick up from the journal. Neither tool loses track of what the other did.

@@ -31,16 +31,24 @@ struct ProjectContext: Sendable {
             skillCounts = (0, 0)
             return
         }
-        let notes = projectDirectory.appendingPathComponent("naseem", isDirectory: true)
-        var isDirectory: ObjCBool = false
-        notesDirectory = FileManager.default.fileExists(atPath: notes.path, isDirectory: &isDirectory)
-            && isDirectory.boolValue ? notes : nil
+        notesDirectory = Self.notesFolder(in: projectDirectory)
 
         let sakCount = Self.countSkills(in: Self.sakSkills)
         let naseemCount = Self.countSkills(in: Self.naseemSkills)
         skillCounts = (sakCount, naseemCount)
         skillStore = SharedSkillStore(own: Self.sakSkills,
                                       readOnly: naseemCount > 0 ? Self.naseemSkills : nil)
+    }
+
+    /// The project's `naseem/` folder, by its exact name. APFS matches names
+    /// case-insensitively, so a plain existence check took any `Naseem/`
+    /// folder (a source folder, say) for the notes.
+    static func notesFolder(in projectDirectory: URL) -> URL? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: projectDirectory.path)) ?? []
+        guard names.contains("naseem") else { return nil }
+        let url = projectDirectory.appendingPathComponent("naseem", isDirectory: true)
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue ? url : nil
     }
 
     // MARK: - Notes in the prompt
@@ -89,18 +97,18 @@ struct ProjectContext: Sendable {
 
     // MARK: - Journal
 
-    /// Adds `- 2026-11-08 18:40 — [sak] Asked … → …` to naseem/journal.md,
-    /// in Naseem's own format. Only when the journal already exists.
-    func appendJournal(request: String, outcome: String) {
+    /// Adds a line to naseem/journal.md in Naseem's own format —
+    /// `- 2026-11-08 18:40 [build] — sak: asked … → outcome` — so Naseem's
+    /// charts and keeper read it like their own. Only when the journal
+    /// already exists, and only for work that changed something: a question
+    /// answered is not an entry.
+    func appendJournal(request: String, outcome: String, kind: JournalKind, now: Date = Date()) {
         guard let dir = notesDirectory else { return }
         let file = dir.appendingPathComponent("journal.md")
         guard FileManager.default.fileExists(atPath: file.path),
               let handle = try? FileHandle(forUpdating: file) else { return }
         defer { try? handle.close() }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        let line = "- \(formatter.string(from: Date())) — [sak] Asked \(Self.clip(request, 120)) → \(Self.clip(outcome, 160))\n"
+        let line = Self.journalLine(request: request, outcome: outcome, kind: kind, now: now) + "\n"
         _ = try? handle.seekToEnd()
         // Start on a fresh line even if the file doesn't end with one.
         if let size = try? handle.offset(), size > 0 {
@@ -110,6 +118,26 @@ struct ProjectContext: Sendable {
             if last != Data("\n".utf8) { handle.write(Data("\n".utf8)) }
         }
         handle.write(Data(line.utf8))
+    }
+
+    /// Naseem's fixed set (ProjectNotes.swift): build, fix, review, ship,
+    /// question, setup. sak writes `build` when files changed or commands
+    /// ran, and nothing for a pure question.
+    enum JournalKind: String { case build, fix, review, ship, question, setup }
+
+    /// Pure — unit-tested. `- 2026-11-08 18:40 [build] — sak: asked … → outcome`.
+    static func journalLine(request: String, outcome: String, kind: JournalKind, now: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return "- \(formatter.string(from: now)) [\(kind.rawValue)] — sak: asked \(clip(request, 120)) → \(clip(outcome, 160))"
+    }
+
+    /// Pure — unit-tested. What kind of entry a request earned: nothing for a
+    /// question (no file or command changed), `build` otherwise.
+    static func journalKind(toolsRun: [String]) -> JournalKind? {
+        let mutating: Set<String> = ["write_file", "edit_file", "run_shell"]
+        return toolsRun.contains(where: mutating.contains) ? .build : nil
     }
 
     // MARK: - Helpers

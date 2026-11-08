@@ -36,6 +36,9 @@ struct Settings {
         values.merge(ProcessInfo.processInfo.environment) { _, env in env }
     }
 
+    /// For tests: settings from values alone, no files or environment.
+    init(values: [String: String]) { self.values = values }
+
     subscript(key: String) -> String? {
         guard let value = values[key], !value.isEmpty else { return nil }
         return value

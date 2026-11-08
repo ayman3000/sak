@@ -28,5 +28,6 @@ let package = Package(
                 .product(name: "LLMProviderKitOpenRouter", package: "LLMProviderKit"),
             ]
         ),
+        .testTarget(name: "sakTests", dependencies: ["sak"]),
     ]
 )
