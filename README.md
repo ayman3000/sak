@@ -4,6 +4,8 @@
 
 `sak` is built on [SwiftAgentKit](https://github.com/ayman3000/SwiftAgentKit), the open-source engine behind [Naseem](https://naseemformac.com), the AI agent for Mac.
 
+> **Want it in a Mac app?** [Naseem](https://naseemformac.com) is the full desktop agent: it works in your projects, files and apps, and has memory and skills. Naseem Pro adds the iOS Simulator, Mac app control, sub-agents and a reviewer. `sak` and Naseem share project notes and skills, so you can switch between the terminal and the app at any time. [See how they work together ↓](#works-with-naseem)
+
 An example session:
 
 ```
@@ -153,7 +155,9 @@ If you use [Naseem](https://naseemformac.com), `sak` shares what it knows:
 - **Project notes.** Naseem keeps `naseem/project.md`, `rules.md`, `roadmap.md` and `journal.md` in a project. `sak` follows those rules, sees the open roadmap items, and adds a `[sak]` line to the journal after each request — so Naseem knows what you did in the terminal, and the other way round.
 - **Skills.** Naseem's skills are available in `sak` too. Skills `sak` learns go to `~/.config/sak/skills`; it never changes Naseem's.
 
-For the iOS Simulator, controlling Mac apps, sub-agents and a reviewer — in a real Mac app — that's [Naseem Pro](https://naseemformac.com).
+A typical day: plan a feature with Naseem, fix a failing test with `sak` in the terminal, then let Naseem pick up from the journal. Neither tool loses track of what the other did.
+
+For the iOS Simulator, Mac app control, sub-agents and a reviewer in a real Mac app, get **[Naseem Pro](https://naseemformac.com)**.
 
 ## Build your own
 
