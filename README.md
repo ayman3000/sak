@@ -30,13 +30,15 @@ cd sak
 make install        # builds a release binary and links it to /usr/local/bin/sak
 ```
 
+If `/usr/local/bin` isn't writable, run `sudo make install`, or install somewhere else with `make install PREFIX=~/.local`. `make install` links to the binary inside the clone, so keep the folder. `make uninstall` removes the link.
+
 Then add your keys (only the ones you use):
 
 ```bash
 mkdir -p ~/.config/sak && cp .env.example ~/.config/sak/.env && open -e ~/.config/sak/.env
 ```
 
-With nothing set, `sak` uses [Ollama](https://ollama.com) on your Mac — local models, or Ollama's cloud models.
+With no keys set, `sak` uses [Ollama](https://ollama.com) on your Mac. The default model, `kimi-k2.6:cloud`, is an Ollama cloud model, so it needs `ollama signin` first. To stay fully local, pick a model you've pulled, such as `sak -m llama3.2`, or choose one with `/model`.
 
 ## Use it
 
@@ -45,6 +47,18 @@ sak                                   # chat in the current folder
 sak "add a --verbose flag to the CLI" # one request, then exit
 sak -c                                # continue this folder's last chat
 ```
+
+| Option | What it does |
+|---|---|
+| `-P`, `--provider <name>` | use a provider: `ollama`, `anthropic`, `openai`, `gemini`, `openrouter` |
+| `-m`, `--model <name>` | use a model |
+| `-r`, `--read-only` | no edit or shell tools |
+| `-y`, `--yes` | approve edits and shell commands without asking |
+| `-c`, `--continue` | continue this folder's last chat |
+| `--json` | print one JSON result (for scripts) |
+| `-q`, `--quiet` | print only the answer, no progress |
+| `--turns <n>` | the maximum number of agent turns per request (default 30) |
+| `-v`, `--version` · `-h`, `--help` | version · help |
 
 ### In the chat
 
@@ -124,7 +138,7 @@ git diff --cached | sak --read-only -q "Reply BLOCK and the reason if this diff 
 | `SAK_NASEEM=0` | don't read Naseem's notes and skills |
 | `SAK_CONFIG_DIR` | use another folder than `~/.config/sak` |
 
-Keys stay inside `sak`: commands the agent runs never see them. Keep keys in `~/.config/sak/.env` rather than a project's `.env` — the agent can read files in your project.
+Keys from `.env` files stay inside `sak`: they aren't put in the environment, so commands the agent runs don't see them. Keys you `export` in your shell are different: like any program's environment, shell commands the agent runs inherit them. Keep keys in `~/.config/sak/.env` rather than a project's `.env`, because the agent can read files in your project.
 
 ## Safety
 
@@ -143,7 +157,7 @@ For the iOS Simulator, controlling Mac apps, sub-agents and a reviewer — in a 
 
 ## Build your own
 
-`sak` is a few hundred lines on top of SwiftAgentKit — a readable example of a real agent. Start at [`Sources/sak/Session.swift`](Sources/sak/Session.swift): it builds the agent, its tools and its approval prompt.
+`sak` is about 1,400 lines of Swift on top of SwiftAgentKit, and it's meant to be read as an example of a real agent. Start at [`Sources/sak/Session.swift`](Sources/sak/Session.swift): it builds the agent, its tools and its approval prompt.
 
 ## License
 
