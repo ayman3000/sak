@@ -109,7 +109,7 @@ sak --read-only --json "list every TODO with its file and line"
   "ok": true, "exit_code": 0,
   "provider": "anthropic", "model": "claude-sonnet-5",
   "response": "…", "turns": 4, "tool_calls": 3, "tool_errors": 0,
-  "denied_tools": [], "elapsed_seconds": 12.4,
+  "denied_tools": [], "elapsed_seconds": 12.4, "context_window": 200000,
   "usage": { "input_tokens": 18234, "output_tokens": 612, "cached_tokens": 9000 }
 }
 ```
@@ -149,7 +149,7 @@ git diff --cached | sak --read-only -q "Reply BLOCK and the reason if this diff 
 | `SAK_NASEEM=0` | don't read Naseem's notes and skills |
 | `SAK_CONFIG_DIR` | use another folder than `~/.config/sak` |
 
-Keys from `.env` files stay inside `sak`: they aren't put in the environment, so commands the agent runs don't see them. Keys you `export` in your shell are different: like any program's environment, shell commands the agent runs inherit them. Keep keys in `~/.config/sak/.env` rather than a project's `.env`, because the agent can read files in your project.
+Keys from `.env` files aren't put in the environment, so a shell command the agent runs doesn't inherit them — but a shell command can still read the file, as you could. Keys you `export` in your shell are inherited like any program's environment. Keep keys in `~/.config/sak/.env` rather than a project's `.env`: the agent's file tools reach your project, not your home folder.
 
 ## Safety
 
@@ -174,7 +174,7 @@ For the iOS Simulator, Mac app control, sub-agents and a reviewer in a real Mac 
 
 ## Status
 
-`sak` is **alpha** (0.2.0-alpha). Commands, flags and the `--json` fields may change before 1.0. It's been tested day to day with Ollama. The Anthropic, OpenAI, Gemini and OpenRouter providers use the same code but have had less real-world testing. Please [report anything that breaks](https://github.com/ayman3000/sak/issues).
+`sak` is **alpha** (0.2.0-alpha). Commands, flags and the `--json` fields may change before 1.0. It's been tested day to day with Ollama; CI builds it and runs its tests on every change, and `make smoke` runs three real requests against a model. The Anthropic, OpenAI, Gemini and OpenRouter providers use the same code but have had less real-world testing. Please [report anything that breaks](https://github.com/ayman3000/sak/issues).
 
 ## License
 
