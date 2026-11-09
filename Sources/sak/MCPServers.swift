@@ -108,7 +108,10 @@ enum MCPServers {
     struct Connected {
         var tools: [any AgentTool] = []
         var lines: [String] = []
-        var manager: MCPManager?
+        /// One manager per server, kept alive for the session.
+        var managers: [MCPManager] = []
+        /// Tool name → the server it came from (for "allow all of this server").
+        var serverOf: [String: String] = [:]
         var toolCount: Int { tools.count }
     }
 
@@ -135,35 +138,40 @@ enum MCPServers {
             }
         }
         guard !servers.isEmpty else { return out }
-        let manager = MCPManager(roots: [projectDirectory], connectTimeout: 15)
-        out.manager = manager
+        var connectedNames: [String] = []
+        var bridgedCount = 0
         for s in servers {
             let config: MCPClientConfig = switch s.config {
             case let .stdio(command, args, env): .stdio(command: command, args: args, env: env.isEmpty ? nil : env)
             case let .http(url): .http(endpoint: url)
             }
+            let manager = MCPManager(roots: [projectDirectory], connectTimeout: 15)
             do {
                 try await manager.connect(config)
             } catch {
                 out.lines.append("\(s.name): couldn't connect — \(oneLine(String(describing: error), max: 120))")
+                continue
+            }
+            out.managers.append(manager)
+            let serverName = await manager.connectedServers().first ?? s.name
+            connectedNames.append(serverName)
+            let bridged = (try? await manager.bridgedTools()) ?? []
+            bridgedCount += bridged.count
+            for tool in bridged {
+                guard let b = tool as? MCPToolBridge else { continue }
+                let readsOnly = b.readOnlyHint == true
+                if readOnly && !readsOnly { continue }
+                out.tools.append(GatedMCPTool(inner: b, requiresConfirmation: !readsOnly, server: serverName))
+                out.serverOf[b.name] = serverName
             }
         }
-        let bridged = (try? await manager.bridgedTools()) ?? []
-        let wrapped = bridged.compactMap { tool -> (any AgentTool)? in
-            guard let b = tool as? MCPToolBridge else { return tool }
-            let readsOnly = b.readOnlyHint == true
-            if readOnly && !readsOnly { return nil }
-            return GatedMCPTool(inner: b, requiresConfirmation: !readsOnly)
-        }
-        out.tools = wrapped
-        let connected = await manager.connectedServers()
-        if !connected.isEmpty {
+        if !connectedNames.isEmpty {
             // Servers name themselves on connect (not always as the config does), so
             // the source is said once: all from Naseem, all from mcp.json, or both.
             let sources = Set(servers.map(\.source))
             let origin = sources == ["Naseem"] ? "Naseem's " : sources.count > 1 ? "mcp.json and Naseem: " : ""
-            out.lines.insert("\(wrapped.count) MCP tool\(wrapped.count == 1 ? "" : "s") from \(origin)\(connected.joined(separator: ", "))"
-                             + (readOnly && wrapped.count < bridged.count ? " (read-only ones; \(bridged.count - wrapped.count) left out)" : ""), at: 0)
+            out.lines.insert("\(out.tools.count) MCP tool\(out.tools.count == 1 ? "" : "s") from \(origin)\(connectedNames.joined(separator: ", "))"
+                             + (readOnly && out.tools.count < bridgedCount ? " (read-only ones; \(bridgedCount - out.tools.count) left out)" : ""), at: 0)
         }
         return out
     }
@@ -173,6 +181,7 @@ enum MCPServers {
 struct GatedMCPTool: AgentTool {
     let inner: MCPToolBridge
     let requiresConfirmation: Bool
+    let server: String
     var name: String { inner.name }
     var description: String { inner.description }
     var parameters: ToolParameters { inner.parameters }

@@ -80,7 +80,7 @@ sak -c                                # continue this folder's last chat
 | `-P`, `--provider <name>` | use a provider: `ollama`, `anthropic`, `openai`, `gemini`, `openrouter` |
 | `-m`, `--model <name>` | use a model |
 | `-r`, `--read-only` | no edit or shell tools |
-| `-y`, `--yes` | approve edits and shell commands without asking |
+| `-y`, `--yes`, `--auto` | auto mode: edits, shell commands and MCP tools run without asking (`SAK_AUTO=1` in `.env` does the same for every run) |
 | `-c`, `--continue` | continue this folder's last chat |
 | `--json` | print one JSON result (for scripts) |
 | `-q`, `--quiet` | print only the answer, no progress |
@@ -130,7 +130,7 @@ sak --read-only --json "list every TODO with its file and line"
 }
 ```
 
-When nobody is there to approve a change, `sak` stops instead of trying something else, and exits with code 3. Pass `-y` to allow changes in a pipeline you trust.
+When nobody is there to approve a change, `sak` stops instead of trying something else, and exits with code 3. Pass `-y` (or `--auto`) to allow changes in a pipeline you trust; another agent driving `sak` — Claude Code calling `sak --auto --json "…"`, say — gets one JSON result back and never a prompt.
 
 | Exit code | Meaning |
 |---|---|
@@ -162,7 +162,8 @@ git diff --cached | sak --read-only -q "Reply BLOCK and the reason if this diff 
 | `TAVILY_API_KEY` | turns on the `web_search` tool ([tavily.com](https://tavily.com), free tier) |
 | `SAK_PROVIDER` · `SAK_MODEL` | the default provider and model |
 | `OLLAMA_HOST` | an Ollama server that isn't `localhost:11434` |
-| `SAK_NASEEM=0` | don't read Naseem's notes and skills |
+| `SAK_AUTO=1` | auto mode for every run, same as `-y` — for a tool that drives `sak` and can't answer prompts |
+| `SAK_NASEEM=0` | don't read Naseem's notes, skills and MCP servers |
 | `SAK_CONFIG_DIR` | use another folder than `~/.config/sak` (`.env`, `mcp.json`, skills, sessions) |
 
 Keys from `.env` files aren't put in the environment, so a shell command the agent runs doesn't inherit them — but a shell command can still read the file, as you could. Keys you `export` in your shell are inherited like any program's environment. Keep keys in `~/.config/sak/.env` rather than a project's `.env`: the agent's file tools reach your project, not your home folder.
@@ -184,7 +185,7 @@ A tool the server marks read-only runs like `read_file`; any other asks first, l
 ## Safety
 
 - File tools only reach the folder you started `sak` in (paths are resolved, symlinks included, before the check).
-- Shell commands can reach anything your user can — that is why each one asks first, unless you pass `-y` or turn on `/yes`. Edits ask too.
+- Shell commands can reach anything your user can — that is why each one asks first, unless you pass `-y` or turn on `/yes`. Edits and MCP tools that change things ask too. At the prompt: `y` once, `a` always for that tool, `s` for every tool of that MCP server, `A` for everything, all for this session.
 - `--read-only` has no edit or shell tools at all.
 
 ## Works with Naseem

@@ -39,7 +39,8 @@ func usage() -> String {
     options:
       -P, --provider NAME   ollama, anthropic, openai, gemini, openrouter
       -m, --model NAME      model id (e.g. claude-opus-5-5, kimi-k2.6:cloud)
-      -y, --yes             approve edits and shell commands without asking
+      -y, --yes, --auto     approve edits, shell commands and MCP tools without asking
+                            (auto mode; SAK_AUTO=1 in .env or the environment does the same)
       -r, --read-only       no edit or shell tools — safe for CI and reviews
       -c, --continue        continue this folder's last chat
       --json                print one JSON result (for scripts); progress → stderr
@@ -62,9 +63,9 @@ func fail(_ message: String, code: Int32 = 2) -> Never {
     exit(code)
 }
 
-func parseArguments() -> Arguments {
+func parseArguments(_ argv: [String] = Array(CommandLine.arguments.dropFirst())) -> Arguments {
     var parsed = Arguments()
-    var args = CommandLine.arguments.dropFirst()
+    var args = argv[...]
     while let arg = args.popFirst() {
         switch arg {
         case "-P", "--provider":
@@ -76,7 +77,7 @@ func parseArguments() -> Arguments {
         case "-m", "--model":
             guard let value = args.popFirst() else { fail("--model needs a name") }
             parsed.model = value
-        case "-y", "--yes": parsed.autoApprove = true
+        case "-y", "--yes", "--auto": parsed.autoApprove = true
         case "-r", "--read-only": parsed.readOnly = true
         case "-c", "--continue": parsed.continueLast = true
         case "--json": parsed.json = true
@@ -144,7 +145,10 @@ var console = Console()
 console.progressToStderr = oneShot
 console.quiet = args.quiet
 
-let options = SessionOptions(autoApprove: args.autoApprove, readOnly: args.readOnly,
+// SAK_AUTO=1: auto mode for every run — for a tool that drives sak (an editor,
+// an agent, a script) and can't answer prompts. Same as -y.
+let autoApprove = args.autoApprove || settings.autoMode
+let options = SessionOptions(autoApprove: autoApprove, readOnly: args.readOnly,
                              maxTurns: args.maxTurns, console: console)
 let session: Session
 do {
@@ -222,7 +226,7 @@ func printJSON(_ outcome: RunOutcome, code: Int32, session: Session) {
 func banner() {
     let c = session.choice
     var flags: [String] = []
-    if session.options.autoApprove { flags.append("auto-approve") }
+    if session.options.autoApprove { flags.append("auto mode — nothing asks") }
     if session.options.readOnly { flags.append("read-only") }
     if session.tools.contains(where: { $0.name == "web_search" }) { flags.append("web search") }
     console.out(console.styled("sak \(version)", .bold) + console.styled("  ·  \(c.model) (\(c.provider.displayName))", .magenta))
@@ -269,3 +273,7 @@ chat: while true {
     try? await SavedSessions.save(session.agent, name: SavedSessions.defaultName(for: cwd))
 }
 console.out(console.styled("bye — `sak -c` picks this chat up again", .dim))
+
+/// For tests: the parser over a given argument list (main.swift's top-level
+/// code can't be called from a test; this can).
+func parseArgumentsForTest(_ argv: [String]) -> Arguments { parseArguments(argv) }

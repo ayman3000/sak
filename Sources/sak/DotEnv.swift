@@ -39,6 +39,9 @@ struct Settings {
     /// For tests: settings from values alone, no files or environment.
     init(values: [String: String]) { self.values = values }
 
+    /// `SAK_AUTO=1|true|yes`: auto mode for every run, same as -y.
+    var autoMode: Bool { ["1", "true", "yes"].contains((self["SAK_AUTO"] ?? "").lowercased()) }
+
     subscript(key: String) -> String? {
         guard let value = values[key], !value.isEmpty else { return nil }
         return value

@@ -179,6 +179,14 @@ struct SessionTests {
         close(fed[0])
     }
 
+    @Test func autoModeComesFromTheFlagOrTheSetting() {
+        #expect(parseArgumentsForTest(["--auto"]).autoApprove)
+        #expect(parseArgumentsForTest(["-y"]).autoApprove)
+        #expect(!parseArgumentsForTest(["-r"]).autoApprove)
+        #expect(Settings(values: ["SAK_AUTO": "1"]).autoMode && Settings(values: ["SAK_AUTO": "yes"]).autoMode)
+        #expect(!Settings(values: ["SAK_AUTO": "0"]).autoMode && !Settings(values: [:]).autoMode)
+    }
+
     @Test func exitCodesMatchTheHelpText() {
         #expect(RunOutcome(response: "ok", error: nil, summary: nil, deniedTools: []).exitCode == 0)
         #expect(RunOutcome(response: "", error: nil, summary: nil, deniedTools: ["edit_file"]).exitCode == 3)
