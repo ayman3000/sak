@@ -13,20 +13,36 @@
 
 > **Want it in a Mac app?** [Naseem](https://naseemformac.com) is the full desktop agent: it works in your projects, files and apps, and has memory and skills. Naseem Pro adds the iOS Simulator, Mac app control, sub-agents and a reviewer. `sak` and Naseem share project notes and skills, so you can switch between the terminal and the app at any time. [See how they work together ↓](#works-with-naseem)
 
-An example session:
+A real session, as recorded (kimi-k2.6:cloud through Ollama; one long path shortened):
 
 ```
-› the date parser test fails since yesterday — find out why and fix it
-→ search_files pattern=DateParser
-  ✓ Sources/Core/DateParser.swift, Tests/CoreTests/DateParserTests.swift
+› the date parser test fails — find out why and fix it
+→ list_dir path=.
+  ✓ Package.swift ⏎ Sources/ ⏎ Tests/
+→ search_files directory=. name=test
+  ✓ …/DateKit/Tests/CoreTests/DateParserTests.swift
+→ read_file path=Tests/CoreTests/DateParserTests.swift
+  ✓ import XCTest ⏎ @testable import Core ⏎  ⏎ final class DateParserTests: XCTestCase { ⏎     func test…
+→ list_dir path=Sources
+  ✓ Core/
+→ list_dir path=Sources/Core
+  ✓ DateParser.swift
 → read_file path=Sources/Core/DateParser.swift
-  ✓ import Foundation ⏎ ⏎ struct DateParser { …
-? allow edit_file path=Sources/Core/DateParser.swift …
+  ✓ import Foundation ⏎  ⏎ /// Parses the timestamps our server sends, e.g. "2025-12-29 14:30". ⏎ public…
+The bug is in `DateParser.swift`: the format string uses `hh:mm` (12-hour) but the timestamp contains `14:30` (24-hour). It needs `HH:mm`.
+? allow edit_file new_text=        formatter.dateFormat = "yyyy-MM-dd HH:mm" old_text=        formatter.dateFormat = "yyyy-MM-dd hh:mm" path=Sources/Core/DateParser.swift
   [y]es  [n]o  [a]lways for edit_file this session › y
-→ run_shell command=swift test --filter DateParserTests
-  ✓ Test Suite 'DateParserTests' passed …
-The formatter's locale was not pinned, so it parsed differently on machines
-set to a 12-hour clock. I set it to en_US_POSIX; the test passes now.
+→ edit_file new_text=        formatter.dateFormat = "yyyy-MM-dd HH:mm" old_text=        formatter.dateFormat = "yyyy-MM-dd hh:mm" path=Sources/Core/DateParser.swift
+  ✓ Replaced 1 occurrence in Sources/Core/DateParser.swift.
+? allow run_shell command=swift test --filter DateParserTests 2>&1
+  [y]es  [n]o  [a]lways for run_shell this session › y
+→ run_shell command=swift test --filter DateParserTests 2>&1
+  ✓ exit 0 ⏎ [0/1] Planning build ⏎ Building for debugging... ⏎ [0/3] Write sources ⏎ [1/3] Write swift-…
+The `DateParser` was failing because its `DateFormatter` format string used `hh:mm` (12-hour) but the server timestamps use 24-hour values like `14:30`. `hh:mm` only parses hours 01–12, so `14:30` returned `nil`.
+
+**Fix:** Changed the format string from `yyyy-MM-dd hh:mm` to `yyyy-MM-dd HH:mm` in `Sources/Core/DateParser.swift`.
+
+The `DateParserTests` now pass.
 ```
 
 ## Install

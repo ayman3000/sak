@@ -22,12 +22,20 @@ final class Stats: @unchecked Sendable {
     private var _lastSummary: AgentRunSummary?
     private var _deniedTools: [String] = []
     private var _toolsThisRequest: [String] = []
+    private var _streamEndedWithNewline = true
 
     var session: Totals { lock.withLock { _session } }
     var lastSummary: AgentRunSummary? { lock.withLock { _lastSummary } }
     var deniedTools: [String] { lock.withLock { _deniedTools } }
     /// The tools this request called, in order (for the journal's kind).
     var toolsThisRequest: [String] { lock.withLock { _toolsThisRequest } }
+    /// Whether the last streamed text ended a line — a prompt or progress
+    /// line printed next must not run on from the model's sentence.
+    var streamEndedWithNewline: Bool { lock.withLock { _streamEndedWithNewline } }
+    func streamed(_ chunk: String) {
+        guard !chunk.isEmpty else { return }
+        lock.withLock { _streamEndedWithNewline = chunk.hasSuffix("\n") }
+    }
 
     func beginRequest() {
         lock.withLock { _session.requests += 1; _lastSummary = nil; _deniedTools = []; _toolsThisRequest = [] }
@@ -152,6 +160,7 @@ final class Session {
 
     func run(_ prompt: String, streamTo stream: Bool = true, interrupts: Interrupts? = nil) async -> RunOutcome {
         stats.beginRequest()
+        stats.streamed("\n")
         let agent = self.agent
         // Consume the stream in its own task so Ctrl-C can cancel it mid-answer:
         // the agent's flag alone is only checked between steps.
@@ -160,7 +169,7 @@ final class Session {
             do {
                 for try await chunk in agent.runStreaming(prompt) {
                     response += chunk
-                    if stream { FileHandle.standardOutput.write(Data(chunk.utf8)) }
+                    if stream { FileHandle.standardOutput.write(Data(chunk.utf8)); stats.streamed(chunk) }
                 }
                 if Task.isCancelled { return (response, AgentError.cancelled) }
                 return (response, nil)
@@ -231,9 +240,11 @@ final class Session {
                 ref.agent?.requestCancel()
                 return false
             }
-            let question = "? allow \(describe(call))\n  [y]es  [n]o  [a]lways for \(call.name) this session › "
+            let question = (stats.streamEndedWithNewline ? "" : "\n")
+                + "? allow \(describe(call))\n  [y]es  [n]o  [a]lways for \(call.name) this session › "
             FileHandle.standardError.write(Data((Console.stderrColor ? Style.yellow.apply(question) : question).utf8))
             let answer = Swift.readLine()?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+            stats.streamed("\n")   // the answer ended the line
             switch answer {
             case "y", "yes": return true
             case "a", "always": approvals.allowAlways(call.name); return true
@@ -248,6 +259,7 @@ final class Session {
                 stats.add(response.usage)
             case .toolExecutionStarted(let call):
                 stats.toolCalled(call.name)
+                if !stats.streamEndedWithNewline { console.progress("", .dim); stats.streamed("\n") }
                 console.progress("→ \(describe(call))", .cyan)
             case .toolExecutionFinished(_, let result):
                 console.progress("  \(result.isError ? "✗" : "✓") \(oneLine(result.result))", result.isError ? .red : .dim)
