@@ -250,12 +250,14 @@ chat: while true {
     }
     let input = line.trimmingCharacters(in: .whitespacesAndNewlines)
     if input.isEmpty { continue }
+    console.restyleInput(input, lines: input.split(separator: "\n").count)
 
     if input.hasPrefix("/") {
         if await commands.handle(input) == .exit { break chat }
         continue
     }
 
+    console.out("")
     let outcome = await session.run(input, interrupts: interrupts)
     if let error = outcome.error {
         console.out(outcome.cancelled

@@ -79,6 +79,35 @@ struct ProjectContextTests {
     }
 }
 
+struct MarkdownTests {
+    let B = "\u{1B}[1m", C = "\u{1B}[36m", D = "\u{1B}[2m", R = "\u{1B}[0m"
+
+    @Test func inlineStylesAndHeadingsAndBullets() {
+        var st = Markdown.State()
+        #expect(Markdown.render("## Fix", state: &st) == "\(B)Fix\(R)")
+        #expect(Markdown.render("- use `HH:mm` **now**", state: &st) == "• use \(C)HH:mm\(R) \(B)now\(R)")
+        #expect(Markdown.render("snake_case stays, 2 * 3 stays", state: &st) == "snake_case stays, 2 * 3 stays")
+        #expect(Markdown.render("1. first", state: &st) == "1. first")
+    }
+
+    @Test func fencedCodeIsDimmedUntilTheClosingFence() {
+        var st = Markdown.State()
+        #expect(Markdown.render("```swift", state: &st) == "\(D)┌ swift\(R)")
+        #expect(st.inCode)
+        #expect(Markdown.render("let **x** = 1", state: &st) == "\(D)│ \(R)\(C)let **x** = 1\(R)", "no inline styling inside code")
+        #expect(Markdown.render("```", state: &st) == "\(D)└\(R)")
+        #expect(!st.inCode)
+    }
+
+    @Test func theRendererEmitsWholeLinesAndFlushesTheRest() {
+        var r = Markdown.Renderer()
+        #expect(r.push("**bo") == "")
+        #expect(r.push("ld**\nnext") == "\(B)bold\(R)\n")
+        #expect(r.finish() == "next")
+        #expect(r.finish() == "")
+    }
+}
+
 struct ModelWindowsTests {
     @Test func theProviderWinsThenTheFamilyThenTheFallback() {
         let listed = [LLMModelInfo(id: "deepseek-v4.1-flash:cloud", providerName: "ollama", contextWindow: 163_840),
