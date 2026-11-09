@@ -306,6 +306,8 @@ final class Session {
         The project folder is \(cwd.path). Relative paths resolve there.
         Look before you change: list and read files first. Make focused edits.
         After changing code, build or test it with run_shell when that makes sense.
+        Make the code pass the tests, never the tests pass the code: don't edit or delete a test you were asked to \
+        make pass; adding a test is fine. If a test looks wrong, say so and stop.
         Answer in plain text suited to a terminal. Finish with a short summary of what you did.
         """
         if readOnly {
