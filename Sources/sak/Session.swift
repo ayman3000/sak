@@ -111,6 +111,8 @@ final class Session {
     let context: ProjectContext
     /// The model's context window in use, and where the number came from.
     private(set) var window: (tokens: Int, source: ModelWindows.Source) = (0, .assumed)
+    /// MCP servers from mcp.json: their tools and a line or two about them.
+    let mcp: MCPServers.Connected
 
     var console: Console { options.console }
 
@@ -120,8 +122,9 @@ final class Session {
         self.choice = choice
         self.options = options
         self.context = ProjectContext(projectDirectory: cwd, settings: settings)
+        self.mcp = await MCPServers.connect(projectDirectory: cwd, readOnly: options.readOnly)
         (self.agent, self.provider) = try await Self.makeAgent(settings: settings, cwd: cwd, choice: choice, options: options,
-                                                               context: context, stats: stats, approvals: approvals)
+                                                               context: context, stats: stats, approvals: approvals, extraTools: mcp.tools)
         self.tools = await agent.registeredTools()
         await fitWindow()
     }
@@ -140,7 +143,7 @@ final class Session {
     func switchTo(_ newChoice: ModelChoice) async throws {
         let history = agent.conversation.allMessages().filter { $0.role != .system }
         let (newAgent, newProvider) = try await Self.makeAgent(settings: settings, cwd: cwd, choice: newChoice, options: options,
-                                                               context: context, stats: stats, approvals: approvals)
+                                                               context: context, stats: stats, approvals: approvals, extraTools: mcp.tools)
         newAgent.conversation.replaceNonSystemMessages(history)
         agent = newAgent
         provider = newProvider
@@ -214,9 +217,10 @@ final class Session {
     // MARK: - Building the agent
 
     private static func makeAgent(settings: Settings, cwd: URL, choice: ModelChoice, options: SessionOptions,
-                                  context: ProjectContext, stats: Stats, approvals: Approvals) async throws -> (Agent, any LLMProvider) {
+                                  context: ProjectContext, stats: Stats, approvals: Approvals,
+                                  extraTools: [any AgentTool] = []) async throws -> (Agent, any LLMProvider) {
         let provider = try choice.provider.makeProvider(model: choice.model, settings: settings)
-        let tools = makeTools(settings: settings, cwd: cwd, readOnly: options.readOnly)
+        let tools = makeTools(settings: settings, cwd: cwd, readOnly: options.readOnly) + extraTools
 
         let agent = Agent(config: AgentConfig(
             provider: provider,

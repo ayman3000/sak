@@ -108,6 +108,26 @@ struct MarkdownTests {
     }
 }
 
+struct MCPServersTests {
+    @Test func claudeStyleFilesAreRead() throws {
+        let json = """
+        { "mcpServers": {
+            "chrome-devtools": { "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest"], "env": { "A": "1" } },
+            "docs": { "url": "https://example.com/mcp" },
+            "off": { "command": "x", "disabled": true } } }
+        """
+        let servers = try MCPServers.parse(Data(json.utf8))
+        #expect(servers.map(\.name) == ["chrome-devtools", "docs"], "sorted; disabled left out")
+        #expect(servers[0].config == .stdio(command: "npx", args: ["-y", "chrome-devtools-mcp@latest"], env: ["A": "1"]))
+        #expect(servers[1].config == .http(URL(string: "https://example.com/mcp")!))
+    }
+    @Test func brokenFilesSayWhy() {
+        #expect(throws: MCPServers.ParseError.self) { try MCPServers.parse(Data("nope".utf8)) }
+        #expect(throws: MCPServers.ParseError.self) { try MCPServers.parse(Data("{}".utf8)) }
+        #expect(throws: MCPServers.ParseError.self) { try MCPServers.parse(Data(#"{"mcpServers":{"bad":{}}}"#.utf8)) }
+    }
+}
+
 struct ModelWindowsTests {
     @Test func theProviderWinsThenTheFamilyThenTheFallback() {
         let listed = [LLMModelInfo(id: "deepseek-v4.1-flash:cloud", providerName: "ollama", contextWindow: 163_840),

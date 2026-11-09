@@ -16,6 +16,7 @@ struct Commands {
         ("/provider [name] [model]", "switch provider: ollama, anthropic, openai, gemini, openrouter"),
         ("/providers", "list providers and which ones have a key"),
         ("/tools", "list the tools the agent can use"),
+        ("/mcp", "the MCP servers from mcp.json and their tools"),
         ("/skills", "list the skills the agent can load"),
         ("/notes", "show the project notes sak loaded"),
         ("/yes", "toggle auto-approve for edits and shell commands"),
@@ -38,6 +39,7 @@ struct Commands {
         case "provider", "p": await provider(args)
         case "providers": listProviders()
         case "tools": listTools()
+        case "mcp": showMCP()
         case "skills": await listSkills()
         case "notes": showNotes()
         case "yes", "auto": await toggleAutoApprove()
@@ -159,6 +161,19 @@ struct Commands {
     }
 
     // MARK: - Tools, skills, notes
+
+    private func showMCP() {
+        if session.mcp.lines.isEmpty {
+            console.out(console.styled("No MCP servers. Add them to ~/.config/sak/mcp.json (or ./.sak/mcp.json), in the same shape as Claude Code's:", .dim))
+            console.out(console.styled(#"  { "mcpServers": { "chrome-devtools": { "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest", "--isolated"] } } }"#, .dim))
+            return
+        }
+        for line in session.mcp.lines { console.out("  " + line) }
+        for tool in session.mcp.tools.sorted(by: { $0.name < $1.name }) {
+            let gate = tool.requiresConfirmation ? console.styled(" (asks)", .yellow) : ""
+            console.out("  \(console.styled(tool.name, .cyan))\(gate)  \(console.styled(oneLine(tool.description, max: 80), .dim))")
+        }
+    }
 
     private func listTools() {
         for tool in session.tools.sorted(by: { $0.name < $1.name }) {

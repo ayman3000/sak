@@ -163,9 +163,21 @@ git diff --cached | sak --read-only -q "Reply BLOCK and the reason if this diff 
 | `SAK_PROVIDER` · `SAK_MODEL` | the default provider and model |
 | `OLLAMA_HOST` | an Ollama server that isn't `localhost:11434` |
 | `SAK_NASEEM=0` | don't read Naseem's notes and skills |
-| `SAK_CONFIG_DIR` | use another folder than `~/.config/sak` |
+| `SAK_CONFIG_DIR` | use another folder than `~/.config/sak` (`.env`, `mcp.json`, skills, sessions) |
 
 Keys from `.env` files aren't put in the environment, so a shell command the agent runs doesn't inherit them — but a shell command can still read the file, as you could. Keys you `export` in your shell are inherited like any program's environment. Keep keys in `~/.config/sak/.env` rather than a project's `.env`: the agent's file tools reach your project, not your home folder.
+
+## MCP servers
+
+Tools from [MCP](https://modelcontextprotocol.io) servers join the agent's own. Put them in `~/.config/sak/mcp.json` (every project) or `./.sak/mcp.json` (one project), in the same shape Claude Code and Claude Desktop use, so a config can be pasted across:
+
+```json
+{ "mcpServers": {
+    "chrome-devtools": { "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest", "--isolated"] },
+    "docs": { "url": "https://example.com/mcp" } } }
+```
+
+A tool the server marks read-only runs like `read_file`; any other asks first, like an edit (`-y` and `/yes` apply). `--read-only` keeps only the read-only ones. `/mcp` lists the servers and their tools; the banner says how many tools came from where. Every server adds its tool schemas to every request — a browser server is a few thousand tokens per call — so list the ones you use.
 
 ## Safety
 

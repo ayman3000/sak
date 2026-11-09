@@ -168,6 +168,7 @@ interrupts.install(console: console)
 // MARK: - One request (prompt, pipe, or --json)
 
 if oneShot {
+    for line in session.mcp.lines { console.progress(line, line.contains("couldn't") ? .yellow : .dim) }
     var prompt = args.promptWords.joined(separator: " ")
     if !piped.isEmpty {
         prompt = prompt.isEmpty ? piped : "\(prompt)\n\n<input>\n\(piped)\n</input>"
@@ -232,6 +233,7 @@ func banner() {
     if let notes = session.context.summaryLine {
         console.out(console.styled(notes, .dim))
     }
+    for line in session.mcp.lines { console.out(console.styled(line, line.contains("couldn't") ? .yellow : .dim)) }
     console.out(console.styled("/help for commands · Ctrl-C stops a request · Ctrl-D quits", .dim))
 }
 
