@@ -21,12 +21,17 @@ final class Stats: @unchecked Sendable {
     private var _session = Totals()
     private var _lastSummary: AgentRunSummary?
     private var _deniedTools: [String] = []
+    private var _toolsThisRequest: [String] = []
 
     var session: Totals { lock.withLock { _session } }
     var lastSummary: AgentRunSummary? { lock.withLock { _lastSummary } }
     var deniedTools: [String] { lock.withLock { _deniedTools } }
+    /// The tools this request called, in order (for the journal's kind).
+    var toolsThisRequest: [String] { lock.withLock { _toolsThisRequest } }
 
-    func beginRequest() { lock.withLock { _session.requests += 1; _lastSummary = nil; _deniedTools = [] } }
+    func beginRequest() {
+        lock.withLock { _session.requests += 1; _lastSummary = nil; _deniedTools = []; _toolsThisRequest = [] }
+    }
     func add(_ usage: AgentTokenUsage?) {
         guard let usage else { return }
         lock.withLock {
@@ -35,7 +40,7 @@ final class Stats: @unchecked Sendable {
             _session.cachedTokens += usage.cachedTokens ?? 0
         }
     }
-    func toolCalled() { lock.withLock { _session.toolCalls += 1 } }
+    func toolCalled(_ name: String) { lock.withLock { _session.toolCalls += 1; _toolsThisRequest.append(name) } }
     func finished(_ summary: AgentRunSummary) { lock.withLock { _lastSummary = summary } }
     func denied(_ tool: String) {
         lock.withLock { if !_deniedTools.contains(tool) { _deniedTools.append(tool) } }
@@ -67,6 +72,21 @@ struct RunOutcome {
     var summary: AgentRunSummary?
     var deniedTools: [String]
     var cancelled: Bool { (error as? AgentError) == .cancelled }
+
+    /// Pure — unit-tested. The process exit code (see `sak --help`): 0 done,
+    /// 1 error, 3 a tool needed approval and was denied, 4 turn limit,
+    /// 130 stopped with Ctrl-C.
+    var exitCode: Int32 {
+        if !deniedTools.isEmpty { return 3 }
+        if let error {
+            switch error as? AgentError {
+            case .cancelled?: return 130
+            case .maxTurnsReached?, .maxTurnsReachedWithSummary?: return 4
+            default: return 1
+            }
+        }
+        return 0
+    }
 }
 
 @MainActor
@@ -76,10 +96,13 @@ final class Session {
     var options: SessionOptions
     private(set) var choice: ModelChoice
     private(set) var agent: Agent
+    private var provider: any LLMProvider
     private(set) var tools: [any AgentTool] = []
     let stats = Stats()
     let approvals = Approvals()
     let context: ProjectContext
+    /// The model's context window in use, and where the number came from.
+    private(set) var window: (tokens: Int, source: ModelWindows.Source) = (0, .assumed)
 
     var console: Console { options.console }
 
@@ -89,9 +112,18 @@ final class Session {
         self.choice = choice
         self.options = options
         self.context = ProjectContext(projectDirectory: cwd, settings: settings)
-        self.agent = try await Self.makeAgent(settings: settings, cwd: cwd, choice: choice, options: options,
-                                              context: context, stats: stats, approvals: approvals)
+        (self.agent, self.provider) = try await Self.makeAgent(settings: settings, cwd: cwd, choice: choice, options: options,
+                                                               context: context, stats: stats, approvals: approvals)
         self.tools = await agent.registeredTools()
+        await fitWindow()
+    }
+
+    /// Size the conversation to the model's real window (ModelWindows).
+    private func fitWindow() async {
+        let listed = await ModelWindows.listed(from: provider)
+        let picked = ModelWindows.pick(model: choice.model, provider: choice.provider, listed: listed)
+        agent.conversation.contextWindow = picked.window
+        window = (picked.window, picked.source)
     }
 
     // MARK: - Switching
@@ -99,12 +131,14 @@ final class Session {
     /// Use a different provider/model. The conversation so far comes along.
     func switchTo(_ newChoice: ModelChoice) async throws {
         let history = agent.conversation.allMessages().filter { $0.role != .system }
-        let newAgent = try await Self.makeAgent(settings: settings, cwd: cwd, choice: newChoice, options: options,
-                                                context: context, stats: stats, approvals: approvals)
+        let (newAgent, newProvider) = try await Self.makeAgent(settings: settings, cwd: cwd, choice: newChoice, options: options,
+                                                               context: context, stats: stats, approvals: approvals)
         newAgent.conversation.replaceNonSystemMessages(history)
         agent = newAgent
+        provider = newProvider
         choice = newChoice
         tools = await agent.registeredTools()
+        await fitWindow()
     }
 
     func setAutoApprove(_ on: Bool) async {
@@ -143,17 +177,18 @@ final class Session {
         if stream, !response.isEmpty, !response.hasSuffix("\n") {
             FileHandle.standardOutput.write(Data("\n".utf8))
         }
-        if !options.readOnly {
+        // Naseem's journal gets a line for work done, never for a question.
+        if !options.readOnly, let kind = ProjectContext.journalKind(toolsRun: stats.toolsThisRequest) {
             let result = failure.map { ($0 as? AgentError) == .cancelled ? "stopped" : "error: \($0)" }
                 ?? Self.lastParagraph(response)
-            context.appendJournal(request: prompt, outcome: result)
+            context.appendJournal(request: prompt, outcome: result, kind: kind)
         }
         return RunOutcome(response: response, error: failure, summary: stats.lastSummary,
                           deniedTools: stats.deniedTools)
     }
 
     /// The answer's closing summary is usually its last paragraph.
-    static func lastParagraph(_ text: String) -> String {
+    nonisolated static func lastParagraph(_ text: String) -> String {
         let paragraphs = text.components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -163,7 +198,7 @@ final class Session {
     // MARK: - Building the agent
 
     private static func makeAgent(settings: Settings, cwd: URL, choice: ModelChoice, options: SessionOptions,
-                                  context: ProjectContext, stats: Stats, approvals: Approvals) async throws -> Agent {
+                                  context: ProjectContext, stats: Stats, approvals: Approvals) async throws -> (Agent, any LLMProvider) {
         let provider = try choice.provider.makeProvider(model: choice.model, settings: settings)
         let tools = makeTools(settings: settings, cwd: cwd, readOnly: options.readOnly)
 
@@ -172,7 +207,7 @@ final class Session {
             model: choice.model,
             systemPrompt: systemPrompt(cwd: cwd, readOnly: options.readOnly, context: context),
             maxTurns: options.maxTurns,
-            contextWindow: 128_000,
+            contextWindow: ModelWindows.fallback(choice.provider),   // fitted to the model right after (fitWindow)
             maxMessages: 400,
             tools: tools,
             autonomousMode: options.autoApprove
@@ -212,7 +247,7 @@ final class Session {
             case .llmCallCompleted(_, let response):
                 stats.add(response.usage)
             case .toolExecutionStarted(let call):
-                stats.toolCalled()
+                stats.toolCalled(call.name)
                 console.progress("→ \(describe(call))", .cyan)
             case .toolExecutionFinished(_, let result):
                 console.progress("  \(result.isError ? "✗" : "✓") \(oneLine(result.result))", result.isError ? .red : .dim)
@@ -228,7 +263,7 @@ final class Session {
                 break
             }
         }
-        return agent
+        return (agent, provider)
     }
 
     static func makeTools(settings: Settings, cwd: URL, readOnly: Bool) -> [any AgentTool] {

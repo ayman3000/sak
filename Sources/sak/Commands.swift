@@ -213,7 +213,16 @@ struct Commands {
           output tokens  \(t.outputTokens.grouped)
           tool calls     \(t.toolCalls)
           context        ~\(context.grouped) tokens in the last request
+          window         \(session.window.tokens.grouped) tokens (\(Self.windowNote(session.window.source)))
         """)
+    }
+
+    static func windowNote(_ source: ModelWindows.Source) -> String {
+        switch source {
+        case .provider: "reported by the provider"
+        case .family: "the model family's published window"
+        case .assumed: "assumed — the provider didn't say"
+        }
     }
 
     // MARK: - Sessions

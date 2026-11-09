@@ -104,8 +104,7 @@ func parseArguments() -> Arguments {
 }
 
 /// Flags win, then the last /model choice, then SAK_PROVIDER / SAK_MODEL, then the defaults.
-func resolveChoice(_ args: Arguments, settings: Settings) -> ModelChoice {
-    let saved = ModelChoice.saved()
+func resolveChoice(_ args: Arguments, settings: Settings, saved: ModelChoice? = ModelChoice.saved()) -> ModelChoice {
     let configured = settings["SAK_PROVIDER"].flatMap(ProviderKind.init(alias:))
     let provider = args.provider ?? saved?.provider ?? configured ?? .ollama
     let model = args.model
@@ -166,7 +165,7 @@ if oneShot {
     if prompt.isEmpty { fail("nothing to do — give a prompt or pipe input in (see sak --help)") }
 
     let outcome = await session.run(prompt, streamTo: !args.json, interrupts: interrupts)
-    let code = exitCode(for: outcome)
+    let code = outcome.exitCode
     if args.json {
         printJSON(outcome, code: code, session: session)
     } else if code == 3 {
@@ -175,18 +174,6 @@ if oneShot {
         console.error("sak: \(describe(error))")
     }
     exit(code)
-}
-
-func exitCode(for outcome: RunOutcome) -> Int32 {
-    if !outcome.deniedTools.isEmpty { return 3 }
-    if let error = outcome.error {
-        switch error as? AgentError {
-        case .cancelled?: return 130
-        case .maxTurnsReached?, .maxTurnsReachedWithSummary?: return 4
-        default: return 1
-        }
-    }
-    return 0
 }
 
 func describe(_ error: Error) -> String {
@@ -206,6 +193,7 @@ func printJSON(_ outcome: RunOutcome, code: Int32, session: Session) {
         "denied_tools": outcome.deniedTools,
         "usage": ["input_tokens": totals.inputTokens, "output_tokens": totals.outputTokens,
                   "cached_tokens": totals.cachedTokens],
+        "context_window": session.window.tokens,
     ]
     if let summary = outcome.summary {
         object["turns"] = summary.totalTurns
