@@ -55,6 +55,32 @@ final class Stats: @unchecked Sendable {
     }
 }
 
+/// Says when a tool call is taking long: after 5 s, then every 10 s, a dim
+/// "… name still running (15 s)" — silence must never look like a hang
+/// (a page that took a minute to load, 2026-11-09).
+final class ToolWatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var timers: [String: Task<Void, Never>] = [:]
+
+    func started(_ call: AgentToolCall, console: Console) {
+        let name = call.name
+        let task = Task.detached {
+            try? await Task.sleep(for: .seconds(5))
+            var elapsed = 5
+            while !Task.isCancelled {
+                console.progress("  … \(name) still running (\(elapsed) s)", .dim)
+                try? await Task.sleep(for: .seconds(10))
+                elapsed += 10
+            }
+        }
+        lock.withLock { timers[call.id] = task }
+    }
+
+    func finished(_ call: AgentToolCall) {
+        lock.withLock { timers.removeValue(forKey: call.id) }?.cancel()
+    }
+}
+
 /// Lets a callback reach the agent it belongs to (set right after the agent is built).
 final class AgentRef: @unchecked Sendable {
     private let lock = NSLock()
@@ -248,6 +274,7 @@ final class Session {
         let console = options.console
         let ref = AgentRef()
         ref.agent = agent
+        let watch = ToolWatch()
         var callbacks = AgentCallbacks()
         let serverOf = mcp.serverOf
         callbacks.onToolConfirmation = { call, _ in
@@ -286,7 +313,9 @@ final class Session {
                 stats.toolCalled(call.name)
                 if !stats.streamEndedWithNewline { console.progress("", .dim); stats.streamed("\n") }
                 console.progress("→ \(describe(call, compact: true))", .cyan)
-            case .toolExecutionFinished(_, let result):
+                watch.started(call, console: console)
+            case .toolExecutionFinished(let call, let result):
+                watch.finished(call)
                 console.progress("  \(result.isError ? "✗" : "✓") \(oneLine(result.result))", result.isError ? .red : .dim)
             case .llmCallRetrying(_, let attempt, let error):
                 console.progress("  retrying model call (\(attempt)): \(oneLine(error))", .yellow)
