@@ -99,6 +99,20 @@ struct SessionTests {
         #expect(a != SavedSessions.defaultName(for: URL(fileURLWithPath: "/Users/me/other/My Project")), "same name, other place")
     }
 
+    /// A launcher that leaves stdin open without writing must not hang sak
+    /// (it did: reading to EOF on an idle pipe). Data that is there is read.
+    @Test func anIdlePipeIsNoInputAndAFedPipeIsRead() {
+        var idle: [Int32] = [0, 0]; #expect(pipe(&idle) == 0)
+        defer { close(idle[0]); close(idle[1]) }
+        #expect(readPipedInput(fd: idle[0], waitMilliseconds: 50) == "")
+        var fed: [Int32] = [0, 0]; #expect(pipe(&fed) == 0)
+        let text = "diff --git a b\n"
+        _ = text.withCString { write(fed[1], $0, strlen($0)) }
+        close(fed[1])
+        #expect(readPipedInput(fd: fed[0], waitMilliseconds: 50) == "diff --git a b")
+        close(fed[0])
+    }
+
     @Test func exitCodesMatchTheHelpText() {
         #expect(RunOutcome(response: "ok", error: nil, summary: nil, deniedTools: []).exitCode == 0)
         #expect(RunOutcome(response: "", error: nil, summary: nil, deniedTools: ["edit_file"]).exitCode == 3)

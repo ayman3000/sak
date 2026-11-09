@@ -123,12 +123,22 @@ let choice = resolveChoice(args, settings: settings)
 
 // Piped input becomes part of the request: `git diff | sak "review this"`.
 let stdinIsTTY = isatty(STDIN_FILENO) != 0
-var piped = ""
-if !stdinIsTTY {
-    let data = FileHandle.standardInput.readDataToEndOfFile()
-    piped = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-}
+let piped = stdinIsTTY ? "" : readPipedInput()
 let oneShot = !args.promptWords.isEmpty || !piped.isEmpty || args.json || !stdinIsTTY
+
+/// What was piped in, or "" when the pipe is open but nothing is coming — a
+/// launcher (an app's Process, a cron job, a CI step) often leaves stdin
+/// attached without writing to it, and reading to EOF then waits forever
+/// (sak 0.2 did; a smoke run hung on its first request). A real pipe has
+/// its data within a moment; we give it a quarter second, then read to EOF
+/// only if something arrived.
+func readPipedInput(fd: Int32 = STDIN_FILENO, waitMilliseconds: Int32 = 250) -> String {
+    var fds = [pollfd(fd: fd, events: Int16(POLLIN), revents: 0)]
+    let ready = poll(&fds, 1, waitMilliseconds)
+    guard ready > 0, fds[0].revents & Int16(POLLIN | POLLHUP) != 0 else { return "" }
+    let data = FileHandle(fileDescriptor: fd).readDataToEndOfFile()
+    return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+}
 
 var console = Console()
 console.progressToStderr = oneShot
