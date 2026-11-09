@@ -87,15 +87,24 @@ final class Interrupts: @unchecked Sendable {
     private let lock = NSLock()
     private var onInterrupt: (@Sendable () -> Void)?
     private var source: DispatchSourceSignal?
+    private var stopping = false
 
     func install(console: Console) {
         signal(SIGINT, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global())
         source.setEventHandler { [weak self] in
             guard let self else { return }
-            let handler = self.lock.withLock { self.onInterrupt }
+            let (handler, again) = self.lock.withLock { (self.onInterrupt, self.stopping) }
             if let handler {
-                console.progress("\n⏹ stopping…", .yellow)
+                if again {
+                    // The first Ctrl-C asked the run to stop; a tool call that
+                    // doesn't come back (a page that never loads) would keep us
+                    // here. The second one quits sak.
+                    console.progress("\n⏹ quitting (a tool call didn't return)", .yellow)
+                    exit(130)
+                }
+                self.lock.withLock { self.stopping = true }
+                console.progress("\n⏹ stopping… (Ctrl-C again quits sak)", .yellow)
                 handler()
             } else {
                 console.out("\n(Ctrl-D or /exit to quit)")
@@ -106,6 +115,6 @@ final class Interrupts: @unchecked Sendable {
     }
 
     /// Until `disarm()`, Ctrl-C calls `cancel` instead of printing a hint.
-    func arm(_ cancel: @escaping @Sendable () -> Void) { lock.withLock { onInterrupt = cancel } }
-    func disarm() { lock.withLock { onInterrupt = nil } }
+    func arm(_ cancel: @escaping @Sendable () -> Void) { lock.withLock { onInterrupt = cancel; stopping = false } }
+    func disarm() { lock.withLock { onInterrupt = nil; stopping = false } }
 }
