@@ -121,6 +121,23 @@ struct MCPServersTests {
         #expect(servers[0].config == .stdio(command: "npx", args: ["-y", "chrome-devtools-mcp@latest"], env: ["A": "1"]))
         #expect(servers[1].config == .http(URL(string: "https://example.com/mcp")!))
     }
+    /// Naseem's own list (settings.mcpServers, JSON): enabled stdio/http servers
+    /// come along; sign-in servers are named, not started; a dash the keyboard
+    /// "corrected" in a flag is put back.
+    @Test func naseemsServersComeAlongExceptSignIns() {
+        let json = """
+        [ {"name": "chrome-devtools", "transport": "stdio", "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest", "\u{2014}isolated"], "enabled": true, "signIn": false},
+          {"name": "notion", "transport": "http", "endpoint": "https://mcp.notion.com/mcp", "enabled": true, "signIn": true},
+          {"name": "files", "command": "npx", "args": ["x"], "enabled": false},
+          {"name": "docs", "transport": "http", "endpoint": "https://example.com/mcp", "enabled": true} ]
+        """
+        let (servers, signIn) = MCPServers.parseNaseem(Data(json.utf8))
+        #expect(servers.map(\.name) == ["chrome-devtools", "docs"])
+        #expect(servers[0].config == .stdio(command: "npx", args: ["-y", "chrome-devtools-mcp@latest", "--isolated"], env: [:]))
+        #expect(servers[0].source == "Naseem")
+        #expect(signIn == ["notion"])
+    }
+
     @Test func brokenFilesSayWhy() {
         #expect(throws: MCPServers.ParseError.self) { try MCPServers.parse(Data("nope".utf8)) }
         #expect(throws: MCPServers.ParseError.self) { try MCPServers.parse(Data("{}".utf8)) }

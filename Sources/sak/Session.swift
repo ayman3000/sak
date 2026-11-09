@@ -122,7 +122,7 @@ final class Session {
         self.choice = choice
         self.options = options
         self.context = ProjectContext(projectDirectory: cwd, settings: settings)
-        self.mcp = await MCPServers.connect(projectDirectory: cwd, readOnly: options.readOnly)
+        self.mcp = await MCPServers.connect(projectDirectory: cwd, readOnly: options.readOnly, withNaseem: settings["SAK_NASEEM"] != "0")
         (self.agent, self.provider) = try await Self.makeAgent(settings: settings, cwd: cwd, choice: choice, options: options,
                                                                context: context, stats: stats, approvals: approvals, extraTools: mcp.tools)
         self.tools = await agent.registeredTools()

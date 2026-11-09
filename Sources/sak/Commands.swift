@@ -164,7 +164,7 @@ struct Commands {
 
     private func showMCP() {
         if session.mcp.lines.isEmpty {
-            console.out(console.styled("No MCP servers. Add them to ~/.config/sak/mcp.json (or ./.sak/mcp.json), in the same shape as Claude Code's:", .dim))
+            console.out(console.styled("No MCP servers: none enabled in Naseem, and no ~/.config/sak/mcp.json (or ./.sak/mcp.json). The file takes Claude Code's shape:", .dim))
             console.out(console.styled(#"  { "mcpServers": { "chrome-devtools": { "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest", "--isolated"] } } }"#, .dim))
             return
         }

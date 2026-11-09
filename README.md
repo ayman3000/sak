@@ -177,6 +177,8 @@ Tools from [MCP](https://modelcontextprotocol.io) servers join the agent's own. 
     "docs": { "url": "https://example.com/mcp" } } }
 ```
 
+If you use Naseem, its enabled MCP servers come along automatically — read from its settings, nothing written back — except servers that need a sign-in (their tokens live in Naseem); `SAK_NASEEM=0` turns that off, and a same-named entry in `mcp.json` wins.
+
 A tool the server marks read-only runs like `read_file`; any other asks first, like an edit (`-y` and `/yes` apply). `--read-only` keeps only the read-only ones. `/mcp` lists the servers and their tools; the banner says how many tools came from where. Every server adds its tool schemas to every request — a browser server is a few thousand tokens per call — so list the ones you use.
 
 ## Safety
@@ -191,6 +193,7 @@ If you use [Naseem](https://naseemformac.com), `sak` shares what it knows:
 
 - **Project notes.** Naseem keeps `naseem/project.md`, `rules.md`, `roadmap.md` and `journal.md` in a project. `sak` follows those rules, sees the open roadmap items, and adds a line to the journal when it changed something (in Naseem's own `[build]` format, marked `sak:`) — so Naseem knows what you did in the terminal, and the other way round. A question answered leaves no entry.
 - **Skills.** Naseem's skills are available in `sak` too. Skills `sak` learns go to `~/.config/sak/skills`; it never changes Naseem's.
+- **MCP servers.** The servers you enabled in Naseem work in `sak` too (see [MCP servers](#mcp-servers)).
 
 A typical day: plan a feature with Naseem, fix a failing test with `sak` in the terminal, then let Naseem pick up from the journal. Neither tool loses track of what the other did.
 
