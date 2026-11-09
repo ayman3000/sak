@@ -20,6 +20,7 @@ let package = Package(
                 "CEditLine",
                 .product(name: "SwiftAgentKit", package: "SwiftAgentKit"),
                 .product(name: "SwiftAgentKitTools", package: "SwiftAgentKit"),
+                .product(name: "SwiftAgentKitMCP", package: "SwiftAgentKit"),
                 .product(name: "LLMProviderKit", package: "LLMProviderKit"),
                 .product(name: "LLMProviderKitOllama", package: "LLMProviderKit"),
                 .product(name: "LLMProviderKitAnthropic", package: "LLMProviderKit"),
