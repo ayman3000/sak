@@ -65,12 +65,20 @@ final class AgentRef: @unchecked Sendable {
     }
 }
 
-/// Tools the user said "always" to in this session.
+/// What the user said "always" to in this session: a tool, a whole MCP
+/// server's tools, or everything. (An MCP server brings dozens of tools; one
+/// answer per tool was one answer too many — 2026-11-09.)
 final class Approvals: @unchecked Sendable {
     private let lock = NSLock()
-    private var always: Set<String> = []
-    func isAlways(_ tool: String) -> Bool { lock.withLock { always.contains(tool) } }
-    func allowAlways(_ tool: String) { _ = lock.withLock { always.insert(tool) } }
+    private var tools: Set<String> = []
+    private var servers: Set<String> = []
+    private var everything = false
+    func isAllowed(tool: String, server: String?) -> Bool {
+        lock.withLock { everything || tools.contains(tool) || (server.map { servers.contains($0) } ?? false) }
+    }
+    func allow(tool: String) { _ = lock.withLock { tools.insert(tool) } }
+    func allow(server: String) { _ = lock.withLock { servers.insert(server) } }
+    func allowEverything() { lock.withLock { everything = true } }
 }
 
 /// What one request produced.
@@ -124,7 +132,7 @@ final class Session {
         self.context = ProjectContext(projectDirectory: cwd, settings: settings)
         self.mcp = await MCPServers.connect(projectDirectory: cwd, readOnly: options.readOnly, withNaseem: settings["SAK_NASEEM"] != "0")
         (self.agent, self.provider) = try await Self.makeAgent(settings: settings, cwd: cwd, choice: choice, options: options,
-                                                               context: context, stats: stats, approvals: approvals, extraTools: mcp.tools)
+                                                               context: context, stats: stats, approvals: approvals, mcp: mcp)
         self.tools = await agent.registeredTools()
         await fitWindow()
     }
@@ -143,7 +151,7 @@ final class Session {
     func switchTo(_ newChoice: ModelChoice) async throws {
         let history = agent.conversation.allMessages().filter { $0.role != .system }
         let (newAgent, newProvider) = try await Self.makeAgent(settings: settings, cwd: cwd, choice: newChoice, options: options,
-                                                               context: context, stats: stats, approvals: approvals, extraTools: mcp.tools)
+                                                               context: context, stats: stats, approvals: approvals, mcp: mcp)
         newAgent.conversation.replaceNonSystemMessages(history)
         agent = newAgent
         provider = newProvider
@@ -218,9 +226,9 @@ final class Session {
 
     private static func makeAgent(settings: Settings, cwd: URL, choice: ModelChoice, options: SessionOptions,
                                   context: ProjectContext, stats: Stats, approvals: Approvals,
-                                  extraTools: [any AgentTool] = []) async throws -> (Agent, any LLMProvider) {
+                                  mcp: MCPServers.Connected) async throws -> (Agent, any LLMProvider) {
         let provider = try choice.provider.makeProvider(model: choice.model, settings: settings)
-        let tools = makeTools(settings: settings, cwd: cwd, readOnly: options.readOnly) + extraTools
+        let tools = makeTools(settings: settings, cwd: cwd, readOnly: options.readOnly) + mcp.tools
 
         let agent = Agent(config: AgentConfig(
             provider: provider,
@@ -241,8 +249,10 @@ final class Session {
         let ref = AgentRef()
         ref.agent = agent
         var callbacks = AgentCallbacks()
+        let serverOf = mcp.serverOf
         callbacks.onToolConfirmation = { call, _ in
-            if approvals.isAlways(call.name) { return true }
+            let server = serverOf[call.name]
+            if approvals.isAllowed(tool: call.name, server: server) { return true }
             guard isatty(STDIN_FILENO) != 0 else {
                 // Nobody to ask (a script or CI): stop now rather than let the
                 // model try other ways around the refusal. Exit code 3 says why.
@@ -251,14 +261,18 @@ final class Session {
                 ref.agent?.requestCancel()
                 return false
             }
+            let scope = server.map { "  [s] all \($0) tools" } ?? ""
             let question = (stats.streamEndedWithNewline ? "" : "\n")
-                + "? allow \(describe(call))\n  [y]es  [n]o  [a]lways for \(call.name) this session › "
+                + "? allow \(describe(call))\n  [y]es  [n]o  [a]lways for \(call.name)\(scope)  [A] everything this session › "
             FileHandle.standardError.write(Data((Console.stderrColor ? Style.yellow.apply(question) : question).utf8))
-            let answer = Swift.readLine()?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+            let raw = Swift.readLine()?.trimmingCharacters(in: .whitespaces) ?? ""
+            let answer = raw == "A" ? "A" : raw.lowercased()
             stats.streamed("\n")   // the answer ended the line
             switch answer {
             case "y", "yes": return true
-            case "a", "always": approvals.allowAlways(call.name); return true
+            case "a", "always": approvals.allow(tool: call.name); return true
+            case "s", "server": if let server { approvals.allow(server: server) }; return true
+            case "A", "all", "everything": approvals.allowEverything(); return true
             default: stats.denied(call.name); return false
             }
         }
