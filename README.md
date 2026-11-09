@@ -41,6 +41,8 @@ make install        # builds a release binary and links it to /usr/local/bin/sak
 
 If `/usr/local/bin` isn't writable, run `sudo make install`, or install somewhere else with `make install PREFIX=~/.local`. `make install` links to the binary inside the clone, so keep the folder. `make uninstall` removes the link.
 
+`make smoke` runs three real requests (a question, a read-only review of this repo, an edit in a temporary folder) and prints their turns, tool calls and tokens — the quick check after changing sak or SwiftAgentKit.
+
 Then add your keys (only the ones you use):
 
 ```bash
