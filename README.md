@@ -227,7 +227,7 @@ The engine's own examples are in [SwiftAgentKit/Examples](https://github.com/aym
 
 ## Status
 
-`sak` is **alpha** (0.2.0-alpha). Commands, flags and the `--json` fields may change before 1.0. It's been tested day to day with Ollama; CI builds it and runs its tests on every change, and `make smoke` runs three real requests against a model. The Anthropic, OpenAI, Gemini and OpenRouter providers use the same code but have had less real-world testing. Please [report anything that breaks](https://github.com/ayman3000/sak/issues).
+`sak` is **alpha** (0.3.0-alpha). Commands, flags and the `--json` fields may change before 1.0. It's been tested day to day with Ollama; CI builds it and runs its tests on every change, and `make smoke` runs three real requests against a model. The Anthropic, OpenAI, Gemini and OpenRouter providers use the same code but have had less real-world testing. Please [report anything that breaks](https://github.com/ayman3000/sak/issues).
 
 ## License
 
