@@ -166,11 +166,18 @@ final class Session {
         // the agent's flag alone is only checked between steps.
         let consumer = Task { () -> (String, Error?) in
             var response = ""
+            // Markdown becomes bold/code/bullets on a terminal; raw everywhere else.
+            var renderer = Console.stdoutColor ? Markdown.Renderer() : nil
+            func emit(_ text: String) {
+                guard !text.isEmpty else { return }
+                FileHandle.standardOutput.write(Data(text.utf8)); stats.streamed(text)
+            }
             do {
                 for try await chunk in agent.runStreaming(prompt) {
                     response += chunk
-                    if stream { FileHandle.standardOutput.write(Data(chunk.utf8)); stats.streamed(chunk) }
+                    if stream { emit(renderer?.push(chunk) ?? chunk) }
                 }
+                if stream, var r = renderer { emit(r.finish()); renderer = r }
                 if Task.isCancelled { return (response, AgentError.cancelled) }
                 return (response, nil)
             } catch {
@@ -260,7 +267,7 @@ final class Session {
             case .toolExecutionStarted(let call):
                 stats.toolCalled(call.name)
                 if !stats.streamEndedWithNewline { console.progress("", .dim); stats.streamed("\n") }
-                console.progress("→ \(describe(call))", .cyan)
+                console.progress("→ \(describe(call, compact: true))", .cyan)
             case .toolExecutionFinished(_, let result):
                 console.progress("  \(result.isError ? "✗" : "✓") \(oneLine(result.result))", result.isError ? .red : .dim)
             case .llmCallRetrying(_, let attempt, let error):
@@ -306,9 +313,10 @@ final class Session {
         The project folder is \(cwd.path). Relative paths resolve there.
         Look before you change: list and read files first. Make focused edits.
         After changing code, build or test it with run_shell when that makes sense.
+        Answer concisely; Markdown is fine (headings, bullets, code).
         Make the code pass the tests, never the tests pass the code: don't edit or delete a test you were asked to \
         make pass; adding a test is fine. If a test looks wrong, say so and stop.
-        Answer in plain text suited to a terminal. Finish with a short summary of what you did.
+        Finish with a short summary of what you did.
         """
         if readOnly {
             prompt += "\n\nYou are in READ-ONLY mode: you can read files and search, but not edit files or run commands. Report what you find and what you would change."
@@ -320,10 +328,22 @@ final class Session {
     }
 }
 
-func describe(_ call: AgentToolCall) -> String {
-    let args = call.parameters
-        .sorted { $0.key < $1.key }
-        .map { "\($0.key)=\(oneLine(String(describing: $0.value.value), max: 60))" }
+/// `edit_file path=… old_text=… new_text=…` for the approval prompt; the
+/// compact form (progress lines) shows an edit as its file and line counts,
+/// a write as its file and size — the texts themselves made the lines
+/// unreadable (2026-11-09).
+func describe(_ call: AgentToolCall, compact: Bool = false) -> String {
+    let p = call.parameters
+    func str(_ k: String) -> String? { p[k].map { String(describing: $0.value) } }
+    if compact, call.name == "edit_file", let path = str("path") {
+        let old = str("old_text") ?? "", new = str("new_text") ?? ""
+        return "edit_file \(path)  (\(old.split(separator: "\n", omittingEmptySubsequences: false).count) → \(new.split(separator: "\n", omittingEmptySubsequences: false).count) lines)"
+    }
+    if compact, call.name == "write_file", let path = str("path") {
+        return "write_file \(path)  (\((str("content") ?? "").utf8.count) bytes)"
+    }
+    let args = p.sorted { $0.key < $1.key }
+        .map { "\($0.key)=\(oneLine(String(describing: $0.value.value), max: compact ? 60 : 160))" }
         .joined(separator: " ")
     return "\(call.name) \(args)"
 }

@@ -34,10 +34,19 @@ struct Console: Sendable {
     func styled(_ text: String, _ style: Style) -> String {
         Self.stdoutColor ? style.apply(text) : text
     }
+
+    /// The line the person just typed, shown once more in bold so it stands
+    /// apart from the answer under it: the editor's echo is one line up.
+    func restyleInput(_ line: String, lines: Int) {
+        guard Self.stdoutColor, lines == 1 else { return }
+        out("\u{1B}[1A\u{1B}[2K" + Style.dim.apply("› ") + Style.bold.apply(line), newline: true)
+    }
 }
 
 enum Style: String, Sendable {
-    case dim = "2", bold = "1", cyan = "36", yellow = "33", red = "31", green = "32", magenta = "35"
+    case dim = "2", bold = "1", italic = "3", cyan = "36", yellow = "33", red = "31", green = "32", magenta = "35"
+    /// Inline code: cyan, like the tool names.
+    static let code = Style.cyan
     func apply(_ text: String) -> String { "\u{1B}[\(rawValue)m\(text)\u{1B}[0m" }
 }
 
