@@ -7,9 +7,9 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
 </p>
 
-**A coding agent for your terminal, written in Swift.** Chat with it, pipe into it, or run it in CI. It reads your code, edits files, runs commands and searches the web — asking before it changes anything.
+**A lightweight coding agent for your terminal, written in Swift.** Reads your code, fixes bugs, runs tests and automates dev tasks with the model you choose — asking before it changes anything. Chat with it, pipe into it, or run it in CI.
 
-`sak` is built on [SwiftAgentKit](https://github.com/ayman3000/SwiftAgentKit), the open-source engine behind [Naseem](https://naseemformac.com), the AI agent for Mac.
+Built on [SwiftAgentKit](https://github.com/ayman3000/SwiftAgentKit), the open-source engine behind [Naseem](https://naseemformac.com), the AI agent for Mac — about 1,400 lines on top of it.
 
 > **Want it in a Mac app?** [Naseem](https://naseemformac.com) is the full desktop agent: it works in your projects, files and apps, and has memory and skills. Naseem Pro adds the iOS Simulator, Mac app control, sub-agents and a reviewer. `sak` and Naseem share project notes and skills, so you can switch between the terminal and the app at any time. [See how they work together ↓](#works-with-naseem)
 
@@ -170,7 +170,7 @@ Keys from `.env` files aren't put in the environment, so a shell command the age
 ## Safety
 
 - File tools only reach the folder you started `sak` in (paths are resolved, symlinks included, before the check).
-- Every edit and shell command asks first, unless you pass `-y` or turn on `/yes`.
+- Shell commands can reach anything your user can — that is why each one asks first, unless you pass `-y` or turn on `/yes`. Edits ask too.
 - `--read-only` has no edit or shell tools at all.
 
 ## Works with Naseem
@@ -182,11 +182,33 @@ If you use [Naseem](https://naseemformac.com), `sak` shares what it knows:
 
 A typical day: plan a feature with Naseem, fix a failing test with `sak` in the terminal, then let Naseem pick up from the journal. Neither tool loses track of what the other did.
 
+| | `sak` | Naseem |
+|---|---|---|
+| Where | the terminal, scripts, CI | a native Mac app |
+| Models | Ollama, Anthropic, OpenAI, Gemini, OpenRouter | those and more, with a reviewer and a helper model |
+| Code, files, shell, web | ✓ | ✓ |
+| Project notes and skills | shared: reads them, journals its work | full memory, lessons, skills |
+| Workflows on a schedule, Telegram | — | ✓ |
+| iOS Simulator, Mac app control, sub-agents | — | Pro |
+
 For the iOS Simulator, Mac app control, sub-agents and a reviewer in a real Mac app, get **[Naseem Pro](https://naseemformac.com)**.
 
 ## Build your own
 
 `sak` is about 1,400 lines of Swift on top of SwiftAgentKit, and it's meant to be read as an example of a real agent. Start at [`Sources/sak/Session.swift`](Sources/sak/Session.swift): it builds the agent, its tools and its approval prompt.
+
+```
+            SwiftAgentKit            the agent loop, tools, memory, skills
+                 │
+        ┌────────┴────────┐
+       sak              Naseem       sak: Terminal.swift (prompt, Ctrl-C),
+    terminal           Mac app            Session.swift (agent, tools, approvals),
+        └────────┬────────┘              ProjectContext.swift (the shared notes and skills)
+                 │
+       naseem/ notes · skills        in your project folder and ~/Library/Application Support/Naseem
+```
+
+The engine's own examples are in [SwiftAgentKit/Examples](https://github.com/ayman3000/SwiftAgentKit/tree/main/Examples).
 
 ## Status
 
