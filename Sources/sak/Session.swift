@@ -99,12 +99,41 @@ final class Approvals: @unchecked Sendable {
     private var tools: Set<String> = []
     private var servers: Set<String> = []
     private var everything = false
+    private var auto = false
+    private var approvedCalls: Set<String> = []
+    /// Auto mode (-y, /yes): nothing asks.
+    var isAuto: Bool {
+        get { lock.withLock { auto } }
+        set { lock.withLock { auto = newValue } }
+    }
+    /// The call ids the approval step let through. The engine's own
+    /// confirmation gate only passes these, so a call that somehow skipped
+    /// the step is refused, not run.
+    func approve(call id: String) { _ = lock.withLock { approvedCalls.insert(id) } }
+    func takeApproval(call id: String) -> Bool { lock.withLock { approvedCalls.remove(id) != nil } }
     func isAllowed(tool: String, server: String?) -> Bool {
         lock.withLock { everything || tools.contains(tool) || (server.map { servers.contains($0) } ?? false) }
     }
     func allow(tool: String) { _ = lock.withLock { tools.insert(tool) } }
     func allow(server: String) { _ = lock.withLock { servers.insert(server) } }
     func allowEverything() { lock.withLock { everything = true } }
+}
+
+/// The answer typed at an approval prompt. Anything that isn't a yes is a no.
+enum ApprovalAnswer: Equatable {
+    case once, alwaysTool, alwaysServer, everything, no
+
+    /// Pure — unit-tested. `A` (capital) is "everything"; `a` is "always for this tool".
+    init(_ typed: String, hasServer: Bool) {
+        let raw = typed.trimmingCharacters(in: .whitespaces)
+        switch raw == "A" ? "A" : raw.lowercased() {
+        case "y", "yes": self = .once
+        case "a", "always": self = .alwaysTool
+        case "s", "server": self = hasServer ? .alwaysServer : .no
+        case "A", "all", "everything": self = .everything
+        default: self = .no
+        }
+    }
 }
 
 /// What one request produced.
@@ -188,6 +217,7 @@ final class Session {
 
     func setAutoApprove(_ on: Bool) async {
         options.autoApprove = on
+        approvals.isAuto = on
         await agent.setAutonomousMode(on)
     }
 
@@ -240,6 +270,10 @@ final class Session {
                           deniedTools: stats.deniedTools)
     }
 
+    /// What the model reads in place of a refused tool's result.
+    nonisolated static let refusalNote = "Not run: the user said no to this. Do not retry it and do not do the same thing "
+        + "another way. Wait for the user's next message."
+
     /// The answer's closing summary is usually its last paragraph.
     nonisolated static func lastParagraph(_ text: String) -> String {
         let paragraphs = text.components(separatedBy: "\n\n")
@@ -277,32 +311,54 @@ final class Session {
         let watch = ToolWatch()
         var callbacks = AgentCallbacks()
         let serverOf = mcp.serverOf
-        callbacks.onToolConfirmation = { call, _ in
+        approvals.isAuto = options.autoApprove
+        let needsApproval = Set(await agent.registeredTools().filter(\.requiresConfirmation).map(\.name))
+        // The approval step runs in beforeTool, ahead of the engine's own gate,
+        // so a "no" is recorded as the person's decision. Left to the engine it
+        // is a failed tool call, and the engine's repair step then tells the
+        // model to "fix these errors": it retried the refused change on the
+        // next message (2026-11-10).
+        callbacks.beforeTool = { call, _ in
+            guard needsApproval.contains(call.name), !approvals.isAuto else { return nil }
             let server = serverOf[call.name]
-            if approvals.isAllowed(tool: call.name, server: server) { return true }
+            func refuse(_ note: String) -> AgentToolResult {
+                stats.denied(call.name)
+                ref.agent?.requestCancel()
+                return .success(toolCallId: call.id, toolName: call.name, result: note)
+            }
+            if approvals.isAllowed(tool: call.name, server: server) { approvals.approve(call: call.id); return nil }
+            // A "no" ends the request (below). Other calls from the same model
+            // turn are refused without asking again.
+            if !stats.deniedTools.isEmpty { return refuse(Self.refusalNote) }
             guard isatty(STDIN_FILENO) != 0 else {
                 // Nobody to ask (a script or CI): stop now rather than let the
                 // model try other ways around the refusal. Exit code 3 says why.
-                stats.denied(call.name)
                 console.progress("  \(call.name) needs approval and there's no terminal to ask — stopping", .yellow)
-                ref.agent?.requestCancel()
-                return false
+                return refuse("Not run: this needs the user's approval and nobody is here to give it. Do not try another way.")
             }
             let scope = server.map { "  [s] all \($0) tools" } ?? ""
             let question = (stats.streamEndedWithNewline ? "" : "\n")
                 + "? allow \(describe(call))\n  [y]es  [n]o  [a]lways for \(call.name)\(scope)  [A] everything this session › "
             FileHandle.standardError.write(Data((Console.stderrColor ? Style.yellow.apply(question) : question).utf8))
-            let raw = Swift.readLine()?.trimmingCharacters(in: .whitespaces) ?? ""
-            let answer = raw == "A" ? "A" : raw.lowercased()
+            let answer = ApprovalAnswer(Swift.readLine() ?? "", hasServer: server != nil)
             stats.streamed("\n")   // the answer ended the line
             switch answer {
-            case "y", "yes": return true
-            case "a", "always": approvals.allow(tool: call.name); return true
-            case "s", "server": if let server { approvals.allow(server: server) }; return true
-            case "A", "all", "everything": approvals.allowEverything(); return true
-            default: stats.denied(call.name); return false
+            case .once: break
+            case .alwaysTool: approvals.allow(tool: call.name)
+            case .alwaysServer: if let server { approvals.allow(server: server) }
+            case .everything: approvals.allowEverything()
+            case .no:
+                // "No" means stop and wait for the person, as in one-shot mode:
+                // left running, the model tries the same change another way
+                // (write_file refused → echo > file with run_shell).
+                return refuse(Self.refusalNote)
             }
+            approvals.approve(call: call.id)
+            return nil
         }
+        // The engine's gate comes after beforeTool: it passes only what the
+        // step above approved.
+        callbacks.onToolConfirmation = { call, _ in approvals.takeApproval(call: call.id) }
         try await agent.setCallbacks(callbacks)
 
         agent.onEvent { event in
@@ -316,7 +372,11 @@ final class Session {
                 watch.started(call, console: console)
             case .toolExecutionFinished(let call, let result):
                 watch.finished(call)
-                console.progress("  \(result.isError ? "✗" : "✓") \(oneLine(result.result))", result.isError ? .red : .dim)
+                if stats.deniedTools.contains(call.name) {
+                    console.progress("  ✗ not allowed", .yellow)
+                } else {
+                    console.progress("  \(result.isError ? "✗" : "✓") \(oneLine(result.result))", result.isError ? .red : .dim)
+                }
             case .llmCallRetrying(_, let attempt, let error):
                 console.progress("  retrying model call (\(attempt)): \(oneLine(error))", .yellow)
             case .loopDetected(let signature, _, _):

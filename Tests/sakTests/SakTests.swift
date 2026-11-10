@@ -187,6 +187,19 @@ struct SessionTests {
         #expect(!Settings(values: ["SAK_AUTO": "0"]).autoMode && !Settings(values: [:]).autoMode)
     }
 
+    @Test func approvalAnswersAreReadAsTyped() {
+        #expect(ApprovalAnswer("y", hasServer: false) == .once)
+        #expect(ApprovalAnswer(" Yes ", hasServer: false) == .once)
+        #expect(ApprovalAnswer("a", hasServer: false) == .alwaysTool)
+        #expect(ApprovalAnswer("A", hasServer: false) == .everything)
+        #expect(ApprovalAnswer("s", hasServer: true) == .alwaysServer)
+        // "s" with no MCP server to allow, an empty line, or anything else is a no.
+        #expect(ApprovalAnswer("s", hasServer: false) == .no)
+        #expect(ApprovalAnswer("", hasServer: true) == .no)
+        #expect(ApprovalAnswer("/exit", hasServer: true) == .no)
+        #expect(ApprovalAnswer("n", hasServer: true) == .no)
+    }
+
     @Test func exitCodesMatchTheHelpText() {
         #expect(RunOutcome(response: "ok", error: nil, summary: nil, deniedTools: []).exitCode == 0)
         #expect(RunOutcome(response: "", error: nil, summary: nil, deniedTools: ["edit_file"]).exitCode == 3)
