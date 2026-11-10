@@ -9,40 +9,61 @@
 
 **A lightweight coding agent for your terminal, written in Swift.** Reads your code, fixes bugs, runs tests and automates dev tasks with the model you choose — asking before it changes anything. Chat with it, pipe into it, or run it in CI.
 
-Built on [SwiftAgentKit](https://github.com/ayman3000/SwiftAgentKit), the open-source engine behind [Naseem](https://naseemformac.com), the AI agent for Mac — about 1,400 lines on top of it.
+Built on [SwiftAgentKit](https://github.com/ayman3000/SwiftAgentKit), the open-source engine behind [Naseem](https://naseemformac.com), the AI agent for Mac — about 2,700 lines on top of it.
 
 > **Want it in a Mac app?** [Naseem](https://naseemformac.com) is the full desktop agent: it works in your projects, files and apps, and has memory and skills. Naseem Pro adds the iOS Simulator, Mac app control, sub-agents and a reviewer. `sak` and Naseem share project notes and skills, so you can switch between the terminal and the app at any time. [See how they work together ↓](#works-with-naseem)
 
-A real session, as recorded (kimi-k2.6:cloud through Ollama; one long path shortened):
+A real session, as recorded (kimi-k2.6:cloud through Ollama; the folder's path shortened). It opens with what the agent has, then asks before each change:
 
 ```
-› the date parser test fails — find out why and fix it
+╭─ sak 0.3.0-alpha ────────────────────────────────────────────────────────────────────────────────────╮
+│ ███████  █████  ██   ██            │ Tools                                                           │
+│ ██      ██   ██ ██  ██             │ files  list_dir, search_files, read_file, edit_file,            │
+│ ███████ ███████ █████              │        write_file                                               │
+│      ██ ██   ██ ██  ██             │ shell  run_shell                                                │
+│ ███████ ██   ██ ██   ██            │ web    web_search, fetch_url                                    │
+│ a coding agent for your terminal   │                                                                 │
+│                                    │                                                                 │
+│ model   kimi-k2.6:cloud            │                                                                 │
+│ via     Ollama                     │                                                                 │
+│ folder  ~/projects/DateKit         │                                                                 │
+│ mode    asks before changes        │                                                                 │
+│ window  262K tokens                │                                                                 │
+│ config  ~/.config/sak/.env         │                                                                 │
+│                                                                                                      │
+│ 8 tools · 0 skills · /help for commands · Ctrl-C stops a request · Ctrl-D quits                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+── kimi-k2.6:cloud · ctx 0/262K ▱▱▱▱▱▱▱▱▱▱ 0% · DateKit · asks before changes ──────────────────────────
+❯ the date parser test fails — find out why and fix it
+
 → list_dir path=.
   ✓ Package.swift ⏎ Sources/ ⏎ Tests/
-→ search_files directory=. name=test
-  ✓ …/DateKit/Tests/CoreTests/DateParserTests.swift
-→ read_file path=Tests/CoreTests/DateParserTests.swift
-  ✓ import XCTest ⏎ @testable import Core ⏎  ⏎ final class DateParserTests: XCTestCase { ⏎     func test…
 → list_dir path=Sources
   ✓ Core/
+→ list_dir path=Tests
+  ✓ CoreTests/
 → list_dir path=Sources/Core
   ✓ DateParser.swift
+→ list_dir path=Tests/CoreTests
+  ✓ DateParserTests.swift
 → read_file path=Sources/Core/DateParser.swift
   ✓ import Foundation ⏎  ⏎ /// Parses the timestamps our server sends, e.g. "2025-12-29 14:30". ⏎ public…
-The bug is in `DateParser.swift`: the format string uses `hh:mm` (12-hour) but the timestamp contains `14:30` (24-hour). It needs `HH:mm`.
+→ read_file path=Tests/CoreTests/DateParserTests.swift
+  ✓ import XCTest ⏎ @testable import Core ⏎  ⏎ final class DateParserTests: XCTestCase { ⏎     func test…
+The bug is in DateParser.swift: the format string uses hh (12-hour clock) but the timestamp uses 14:30, which requires HH (24-hour clock).
 ? allow edit_file new_text=        formatter.dateFormat = "yyyy-MM-dd HH:mm" old_text=        formatter.dateFormat = "yyyy-MM-dd hh:mm" path=Sources/Core/DateParser.swift
-  [y]es  [n]o  [a]lways for edit_file this session › y
-→ edit_file new_text=        formatter.dateFormat = "yyyy-MM-dd HH:mm" old_text=        formatter.dateFormat = "yyyy-MM-dd hh:mm" path=Sources/Core/DateParser.swift
+  [y]es  [n]o  [a]lways for edit_file  [A] everything this session › y
+→ edit_file Sources/Core/DateParser.swift  (1 → 1 lines)
   ✓ Replaced 1 occurrence in Sources/Core/DateParser.swift.
-? allow run_shell command=swift test --filter DateParserTests 2>&1
-  [y]es  [n]o  [a]lways for run_shell this session › y
-→ run_shell command=swift test --filter DateParserTests 2>&1
+? allow run_shell command=swift test 2>&1
+  [y]es  [n]o  [a]lways for run_shell  [A] everything this session › y
+→ run_shell command=swift test 2>&1
   ✓ exit 0 ⏎ [0/1] Planning build ⏎ Building for debugging... ⏎ [0/3] Write sources ⏎ [1/3] Write swift-…
-The `DateParser` was failing because its `DateFormatter` format string used `hh:mm` (12-hour) but the server timestamps use 24-hour values like `14:30`. `hh:mm` only parses hours 01–12, so `14:30` returned `nil`.
+Fixed. The DateParser used hh:mm (12-hour clock), so 14:30 couldn't be parsed. Changed to HH:mm (24-hour clock). Tests now pass.
 
-**Fix:** Changed the format string from `yyyy-MM-dd hh:mm` to `yyyy-MM-dd HH:mm` in `Sources/Core/DateParser.swift`.
-
-The `DateParserTests` now pass.
+── kimi-k2.6:cloud · ctx 1.1K/262K ▰▱▱▱▱▱▱▱▱▱ 0% · DateKit · asks before changes ───────────────────────
+❯
 ```
 
 ## What it does
@@ -59,7 +80,7 @@ The `DateParserTests` now pass.
 - **Where the work already is.** Build output, test failures, git — pipe them straight in: `swift test 2>&1 | sak "why does this fail?"`. No copy-paste into a chat window.
 - **Small prompts, fast turns.** sak sends the model a short system prompt, seven tool schemas and the files it actually read — not a transcript of everything. On the same tasks and the same model, that was a third to a quarter of the tokens of the larger agents and correspondingly faster (see *Measured*).
 - **Scriptable.** It composes like any Unix tool: pre-commit hooks, CI steps, a nightly review, or another agent calling it.
-- **Readable.** About 1,400 lines of Swift on a public engine: you can see exactly what runs in your folder.
+- **Readable.** About 2,700 lines of Swift on a public engine: you can see exactly what runs in your folder.
 
 ## Use cases
 
@@ -116,21 +137,40 @@ sak -c                                # continue this folder's last chat
 
 ### In the chat
 
+Type `/` and a menu of commands opens under the prompt. It narrows as you type:
+
+```
+❯ /p
+❯ /provider [name] [model]  switch provider: ollama, anthropic, openai, gemini, openrouter
+  /providers                list providers and which ones have a key
+  /mcp                      the MCP servers from mcp.json and their tools
+  /help                     this list
+```
+
+| Key | In the menu |
+|---|---|
+| ↓ ↑ | move the highlight (it wraps) |
+| Enter | run the highlighted command — `/mo` + Enter runs `/model` |
+| Tab | put it on the line, ready for its arguments |
+| Esc | close the menu and keep what you typed |
+
 | Command | What it does |
 |---|---|
 | `/model` | show the model and pick another from a numbered list |
 | `/model claude-opus-5-5` | switch model by name |
 | `/provider anthropic` | switch provider: `ollama`, `anthropic`, `openai`, `gemini`, `openrouter` |
 | `/providers` | which providers are ready, and which need a key |
-| `/tools` · `/skills` · `/notes` | what the agent can use and knows |
+| `/tools` · `/mcp` · `/skills` · `/notes` | what the agent can use and knows |
 | `/yes` | toggle auto-approve for edits and shell commands |
 | `/usage` | tokens and tool calls so far |
 | `/save` · `/resume` | save and reload conversations |
-| `/clear` · `/exit` | fresh conversation · quit |
+| `/clear` · `/help` · `/exit` | fresh conversation · this list · quit |
 
 Switching model keeps the conversation, so you can plan with one model and finish with another. Your choice is remembered for next time.
 
-↑/↓ go through your history, Ctrl-R searches it, Ctrl-C stops a running request, Ctrl-D quits. End a line with `\` to keep typing on the next.
+Above each prompt, a line shows the model, how full the context window is (the bar turns yellow at 60% and red at 85%), the folder and branch, and the mode.
+
+With no menu open, ↑/↓ go through your history; Ctrl-R searches it, Ctrl-C stops a running request, Ctrl-D quits. End a line with `\` to keep typing on the next. Text in any language works at the prompt, whatever the terminal's `LANG`.
 
 ### In scripts and CI
 
@@ -252,14 +292,15 @@ For the iOS Simulator, Mac app control, sub-agents and a reviewer in a real Mac 
 
 ## Build your own
 
-`sak` is about 1,400 lines of Swift on top of SwiftAgentKit, and it's meant to be read as an example of a real agent. Start at [`Sources/sak/Session.swift`](Sources/sak/Session.swift): it builds the agent, its tools and its approval prompt.
+`sak` is about 2,700 lines of Swift on top of SwiftAgentKit, and it's meant to be read as an example of a real agent. Start at [`Sources/sak/Session.swift`](Sources/sak/Session.swift): it builds the agent, its tools and its approval prompt.
 
 ```
             SwiftAgentKit            the agent loop, tools, memory, skills
                  │
         ┌────────┴────────┐
        sak              Naseem       sak: Terminal.swift (prompt, Ctrl-C),
-    terminal           Mac app            Session.swift (agent, tools, approvals),
+    terminal           Mac app            Welcome.swift, SlashMenu.swift (the panel, the / menu),
+        │                 │               Session.swift (agent, tools, approvals),
         └────────┬────────┘              ProjectContext.swift (the shared notes and skills)
                  │
        naseem/ notes · skills        in your project folder and ~/Library/Application Support/Naseem
@@ -290,6 +331,7 @@ What it doesn't do yet, honestly:
 - **Keys in `.env` are readable** by a shell command you approve, like any file. Keep keys in `~/.config/sak/.env`, not in a project.
 - **It can still touch tests you asked it to make pass** — the prompt forbids it, models sometimes do it anyway. Protected tests in a hidden copy are the real guard.
 - **One conversation per folder** with `-c`; no branching, no sharing across machines.
+- **Tab completes commands, not file names**, and the `/` menu hasn't been tried with Ctrl-Z or while the window is being resized.
 - **Tokens, not dollars**: `/usage` shows counts, not cost.
 - **MCP servers cost tokens**: every server's tool schemas ride along on every request; a browser server is a few thousand tokens per call. List the ones you use.
 - **macOS only**, Swift 6.2 to build; no Homebrew formula yet (coming).
