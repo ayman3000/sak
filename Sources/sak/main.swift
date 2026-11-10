@@ -257,6 +257,8 @@ func statusRule() async -> String {
 }
 
 await banner()
+let slashCommands = SlashMenu.commands(from: Commands.help)
+SlashMenu.install(commands: slashCommands)
 LineEditor.start()
 let commands = Commands(session: session)
 
@@ -270,7 +272,8 @@ chat: while true {
         guard let more = LineEditor.readLine(prompt: "… ") else { break }
         line += "\n" + more
     }
-    let input = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    // "/mo" + Enter runs the menu's first match, "/model".
+    let input = SlashMenu.resolve(line.trimmingCharacters(in: .whitespacesAndNewlines), in: slashCommands, known: Commands.known)
     if input.isEmpty { continue }
     console.restyleInput(input, lines: input.split(separator: "\n").count)
 

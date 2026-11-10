@@ -292,3 +292,69 @@ struct WelcomeTests {
         #expect(Welcome.shortPath("/Users/me/a/very/long/path/to/some/deep/project/folder", home: "/Users/me", max: 20) == "~/…/project/folder")
     }
 }
+
+@MainActor struct SlashMenuTests {
+    private let commands = SlashMenu.commands(from: Commands.help)
+
+    @Test func theHelpTableBecomesMenuCommands() {
+        #expect(commands.first == SlashMenu.Command(name: "/model", arguments: "[name|number]",
+                                                    about: "show or switch the model (no name: pick from a list)"))
+        #expect(commands.contains { $0.name == "/exit" && $0.arguments.isEmpty })
+        // Everything the menu offers is something Enter can run.
+        for command in commands { #expect(Commands.known.contains(command.name)) }
+    }
+
+    @Test func theMenuNarrowsWithWhatIsTyped() {
+        #expect(SlashMenu.matches(for: "/", in: commands).count == commands.count)
+        #expect(SlashMenu.matches(for: "/mo", in: commands).map(\.name) == ["/model"])
+        // Names that start with the text first, then names that contain it.
+        #expect(SlashMenu.matches(for: "/p", in: commands).map(\.name) == ["/provider", "/providers", "/mcp", "/help"])
+        #expect(SlashMenu.matches(for: "/MO", in: commands).map(\.name) == ["/model"])
+        #expect(SlashMenu.matches(for: "/zz", in: commands).isEmpty)
+        // Not a command being typed: no menu.
+        #expect(SlashMenu.matches(for: "", in: commands).isEmpty)
+        #expect(SlashMenu.matches(for: "fix /this", in: commands).isEmpty)
+        #expect(SlashMenu.matches(for: "/model ", in: commands).isEmpty)
+        #expect(SlashMenu.matches(for: "/model sonnet", in: commands).isEmpty)
+    }
+
+    @Test func enterRunsTheFirstMatch() {
+        func resolve(_ line: String) -> String { SlashMenu.resolve(line, in: commands, known: Commands.known) }
+        #expect(resolve("/mo") == "/model")
+        #expect(resolve("/mo sonnet") == "/model sonnet")
+        #expect(resolve("/too") == "/tools")
+        // A real name or alias is left alone, even when it is a prefix of another.
+        #expect(resolve("/m") == "/m")
+        #expect(resolve("/provider") == "/provider")
+        #expect(resolve("/q") == "/q")
+        // Nothing matches: left for "Unknown command". Not a command: untouched.
+        #expect(resolve("/zz") == "/zz")
+        #expect(resolve("explain /usr/bin") == "explain /usr/bin")
+    }
+
+    @Test func menuRowsFitTheTerminalAndMarkTheFirst() {
+        let all = SlashMenu.matches(for: "/", in: commands)
+        let rows = SlashMenu.rows(for: all, width: 60, maxRows: 16, color: false)
+        #expect(rows.count == all.count)
+        #expect(rows[0].hasPrefix("❯ /model"))
+        #expect(rows[1].hasPrefix("  /provider"))
+        for row in rows { #expect(row.count <= 59) }
+        // More matches than rows: the last row says how many are left.
+        let few = SlashMenu.rows(for: all, width: 100, maxRows: 5, color: false)
+        #expect(few.count == 5)
+        #expect(few.last == "  … \(all.count - 4) more — keep typing")
+        #expect(SlashMenu.rows(for: [], width: 100, color: false).isEmpty)
+        #expect(!SlashMenu.rows(for: all, width: 100, color: false).joined().contains("\u{1B}"))
+    }
+
+    @Test func drawingMakesRoomClearsAndComesBack() {
+        let esc = "\u{1B}"
+        let draw = SlashMenu.drawing(rows: ["a", "b"], previous: 0)
+        #expect(draw == "\(esc)D\(esc)D\(esc)[2A\(esc)7\r\n\(esc)[Ja\r\nb\(esc)8")
+        // A shorter menu still clears the longer one it replaces.
+        #expect(SlashMenu.drawing(rows: ["a"], previous: 3).hasPrefix("\(esc)D\(esc)D\(esc)D\(esc)[3A"))
+        // Nothing to show and nothing to clear: nothing is written.
+        #expect(SlashMenu.drawing(rows: [], previous: 0).isEmpty)
+        #expect(SlashMenu.drawing(rows: [], previous: 2) == "\(esc)D\(esc)D\(esc)[2A\(esc)7\r\n\(esc)[J\(esc)8")
+    }
+}

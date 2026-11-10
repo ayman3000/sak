@@ -1,7 +1,7 @@
 // Terminal output, the line editor, and Ctrl-C handling.
 
 import Foundation
-import CEditLine
+@preconcurrency import CEditLine
 
 /// Where sak writes. The answer goes to stdout; progress (tool calls, notes)
 /// goes to stdout in a chat and to stderr in one-shot mode, so
@@ -42,6 +42,13 @@ struct Console: Sendable {
         out("\u{1B}[1A\u{1B}[2K" + Style.c45.apply("❯ ") + Style.bold.apply(line), newline: true)
     }
 
+    /// The terminal's height in rows; 24 when stdout isn't a terminal.
+    static var height: Int {
+        var size = winsize()
+        guard ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0, size.ws_row > 0 else { return 24 }
+        return Int(size.ws_row)
+    }
+
     /// The terminal's width in columns; 80 when stdout isn't a terminal.
     static var width: Int {
         var size = winsize()
@@ -71,20 +78,47 @@ func oneLine(_ text: String, max: Int = 100) -> String {
 enum LineEditor {
     static let historyFile = Settings.globalFile.deletingLastPathComponent().appendingPathComponent("history").path
 
+    nonisolated(unsafe) private static var editor: OpaquePointer?
+    nonisolated(unsafe) private static var history: OpaquePointer?
+    nonisolated(unsafe) private static var prompt: UnsafeMutablePointer<CChar>?
+
     static func start() {
         try? FileManager.default.createDirectory(atPath: (historyFile as NSString).deletingLastPathComponent,
                                                  withIntermediateDirectories: true)
-        _ = read_history(historyFile)
+        // libedit reads and shows UTF-8 only in a UTF-8 locale. Take the
+        // user's; if that isn't UTF-8 (LANG unset, as under some launchers),
+        // use UTF-8 for characters anyway — a Mac terminal is.
+        setlocale(LC_CTYPE, "")
+        if String(cString: nl_langinfo(CODESET)) != "UTF-8" { setlocale(LC_CTYPE, "UTF-8") }
+        history = sak_history_new(historyFile)
+        editor = sak_editor_new(history,
+                                { _ in LineEditor.prompt },
+                                { editor, out in SlashMenu.readKey(editor, out) },
+                                { editor, _ in SlashMenu.complete(editor) })
     }
 
+    /// After Ctrl-C at the prompt: editing mode again, prompt and line redrawn.
+    static func restoreAfterInterrupt() {
+        guard reading, let editor else { return }
+        SlashMenu.beginLine()
+        sak_editor_restore(editor)
+    }
+
+    nonisolated(unsafe) private static var reading = false
+
     /// nil on Ctrl-D.
-    static func readLine(prompt: String) -> String? {
-        guard let raw = CEditLine.readline(prompt) else { return nil }
-        defer { free(raw) }
-        let line = String(cString: raw)
+    static func readLine(prompt text: String) -> String? {
+        free(prompt)
+        prompt = strdup(text)
+        SlashMenu.beginLine()
+        reading = true
+        defer { reading = false; SlashMenu.endLine() }
+        var count: Int32 = 0
+        guard let raw = el_gets(editor, &count), count > 0 else { return nil }
+        var line = String(cString: raw)
+        if line.hasSuffix("\n") { line.removeLast() }
         if !line.trimmingCharacters(in: .whitespaces).isEmpty {
-            _ = add_history(raw)
-            _ = write_history(historyFile)
+            sak_history_add(history, line, historyFile)
         }
         return line
     }
@@ -98,6 +132,7 @@ final class Interrupts: @unchecked Sendable {
     private var onInterrupt: (@Sendable () -> Void)?
     private var source: DispatchSourceSignal?
     private var stopping = false
+    private var lastHint = Date.distantPast
 
     func install(console: Console) {
         signal(SIGINT, SIG_IGN)
@@ -117,7 +152,19 @@ final class Interrupts: @unchecked Sendable {
                 console.progress("\n⏹ stopping… (Ctrl-C again quits sak)", .yellow)
                 handler()
             } else {
-                console.out("\n(Ctrl-D or /exit to quit)")
+                // libedit passes the signal on after tidying the terminal, so
+                // one Ctrl-C at the prompt arrives twice: say it once.
+                let now = Date()
+                let repeated = self.lock.withLock { () -> Bool in
+                    defer { self.lastHint = now }
+                    return now.timeIntervalSince(self.lastHint) < 0.3
+                }
+                if !repeated {
+                    console.out("\n(Ctrl-D or /exit to quit)")
+                    // libedit left the terminal in plain mode for the signal;
+                    // once it has finished, bring the prompt and editing back.
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { LineEditor.restoreAfterInterrupt() }
+                }
             }
         }
         source.resume()

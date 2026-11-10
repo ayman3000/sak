@@ -24,7 +24,16 @@ struct Commands {
         ("/save [name]", "save this conversation"),
         ("/resume [name]", "load a saved conversation (no name: list them)"),
         ("/clear", "start a fresh conversation"),
+        ("/help", "this list"),
         ("/exit", "quit (or Ctrl-D)"),
+    ]
+
+    /// Every name `handle` accepts, aliases included — what the "/" menu
+    /// must leave alone when Enter is pressed.
+    static let known: Set<String> = [
+        "/help", "/?", "/model", "/m", "/models", "/provider", "/p", "/providers", "/tools", "/mcp", "/skills",
+        "/notes", "/yes", "/auto", "/usage", "/cost", "/save", "/resume", "/load", "/clear", "/reset", "/new",
+        "/exit", "/quit", "/q",
     ]
 
     func handle(_ line: String) async -> CommandResult {
