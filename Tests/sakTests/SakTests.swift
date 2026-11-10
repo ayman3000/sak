@@ -379,3 +379,17 @@ struct WelcomeTests {
         #expect(SlashMenu.drawing(rows: [], previous: 2) == "\(esc)D\(esc)D\(esc)[2A\(esc)7\r\n\(esc)[J\(esc)8")
     }
 }
+
+struct StreamingTests {
+    @Test func textBeforeAToolCallIsShownBeforeIt() {
+        // The model says a sentence (no line break), calls a tool, then answers.
+        let renderer = SharedRenderer()
+        var shown = renderer.push("The format is wrong.")
+        #expect(shown.isEmpty, "an unfinished line waits for its line break…")
+        shown += renderer.finish()
+        #expect(shown.contains("The format is wrong."), "…unless a tool is about to run")
+        // The final answer starts clean: nothing left over to run into it.
+        #expect(renderer.push("Fixed.\n").hasPrefix("Fixed."))
+        #expect(renderer.finish().isEmpty)
+    }
+}

@@ -48,6 +48,14 @@ final class Stats: @unchecked Sendable {
             _session.cachedTokens += usage.cachedTokens ?? 0
         }
     }
+    /// Writes out any answer text the Markdown renderer is still holding (a
+    /// line without its line break yet). Called before a tool runs or asks:
+    /// held back, a sentence the model said before a tool call came out after
+    /// it, run together with the final answer ("…HH:mm.Fixed.", 2026-11-10).
+    private var _flushStream: (@Sendable () -> Void)?
+    func setFlushStream(_ flush: (@Sendable () -> Void)?) { lock.withLock { _flushStream = flush } }
+    func flushStream() { lock.withLock { _flushStream }?() }
+
     func toolCalled(_ name: String) { lock.withLock { _session.toolCalls += 1; _toolsThisRequest.append(name) } }
     func finished(_ summary: AgentRunSummary) { lock.withLock { _lastSummary = summary } }
     func denied(_ tool: String) {
@@ -117,6 +125,15 @@ final class Approvals: @unchecked Sendable {
     func allow(tool: String) { _ = lock.withLock { tools.insert(tool) } }
     func allow(server: String) { _ = lock.withLock { servers.insert(server) } }
     func allowEverything() { lock.withLock { everything = true } }
+}
+
+/// The Markdown renderer for one request, shared between the task that
+/// streams the answer and the tool callback that flushes it.
+final class SharedRenderer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var renderer = Markdown.Renderer()
+    func push(_ chunk: String) -> String { lock.withLock { renderer.push(chunk) } }
+    func finish() -> String { lock.withLock { renderer.finish() } }
 }
 
 /// The answer typed at an approval prompt. Anything that isn't a yes is a no.
@@ -229,22 +246,28 @@ final class Session {
         stats.beginRequest()
         stats.streamed("\n")
         let agent = self.agent
+        let stats = self.stats
+        // Markdown becomes bold/code/bullets on a terminal; raw everywhere else.
+        let renderer = Console.stdoutColor && stream ? SharedRenderer() : nil
+        @Sendable func emit(_ text: String) {
+            guard !text.isEmpty else { return }
+            FileHandle.standardOutput.write(Data(text.utf8)); stats.streamed(text)
+        }
+        stats.setFlushStream {
+            guard let rest = renderer?.finish(), !rest.isEmpty else { return }
+            emit(rest + "\n")
+        }
+        defer { stats.setFlushStream(nil) }
         // Consume the stream in its own task so Ctrl-C can cancel it mid-answer:
         // the agent's flag alone is only checked between steps.
         let consumer = Task { () -> (String, Error?) in
             var response = ""
-            // Markdown becomes bold/code/bullets on a terminal; raw everywhere else.
-            var renderer = Console.stdoutColor ? Markdown.Renderer() : nil
-            func emit(_ text: String) {
-                guard !text.isEmpty else { return }
-                FileHandle.standardOutput.write(Data(text.utf8)); stats.streamed(text)
-            }
             do {
                 for try await chunk in agent.runStreaming(prompt) {
                     response += chunk
                     if stream { emit(renderer?.push(chunk) ?? chunk) }
                 }
-                if stream, var r = renderer { emit(r.finish()); renderer = r }
+                if stream, let renderer { emit(renderer.finish()) }
                 if Task.isCancelled { return (response, AgentError.cancelled) }
                 return (response, nil)
             } catch {
@@ -319,6 +342,7 @@ final class Session {
         // model to "fix these errors": it retried the refused change on the
         // next message (2026-11-10).
         callbacks.beforeTool = { call, _ in
+            stats.flushStream()   // what the model said before this call, shown before it
             guard needsApproval.contains(call.name), !approvals.isAuto else { return nil }
             let server = serverOf[call.name]
             func refuse(_ note: String) -> AgentToolResult {
