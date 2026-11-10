@@ -266,9 +266,13 @@ chat: while true {
     console.out("")
     let outcome = await session.run(input, interrupts: interrupts)
     if let error = outcome.error {
-        console.out(outcome.cancelled
-            ? console.styled("(stopped)", .yellow)
-            : console.styled("error: \(describe(error))", .red))
+        if outcome.cancelled, let refused = outcome.deniedTools.first {
+            console.out(console.styled("(stopped: you said no to \(refused). Nothing was changed by it — say what to do instead.)", .yellow))
+        } else {
+            console.out(outcome.cancelled
+                ? console.styled("(stopped)", .yellow)
+                : console.styled("error: \(describe(error))", .red))
+        }
     }
     try? await SavedSessions.save(session.agent, name: SavedSessions.defaultName(for: cwd))
 }
