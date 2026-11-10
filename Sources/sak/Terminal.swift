@@ -39,12 +39,22 @@ struct Console: Sendable {
     /// apart from the answer under it: the editor's echo is one line up.
     func restyleInput(_ line: String, lines: Int) {
         guard Self.stdoutColor, lines == 1 else { return }
-        out("\u{1B}[1A\u{1B}[2K" + Style.dim.apply("› ") + Style.bold.apply(line), newline: true)
+        out("\u{1B}[1A\u{1B}[2K" + Style.c45.apply("❯ ") + Style.bold.apply(line), newline: true)
+    }
+
+    /// The terminal's width in columns; 80 when stdout isn't a terminal.
+    static var width: Int {
+        var size = winsize()
+        guard ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0, size.ws_col > 0 else { return 80 }
+        return Int(size.ws_col)
     }
 }
 
 enum Style: String, Sendable {
     case dim = "2", bold = "1", italic = "3", cyan = "36", yellow = "33", red = "31", green = "32", magenta = "35"
+    /// 256-colour shades for the welcome panel and status rule: the logo's
+    /// cyan → blue → violet, and a muted teal for borders and labels.
+    case c51 = "38;5;51", c45 = "38;5;45", c39 = "38;5;39", c33 = "38;5;33", c63 = "38;5;63", c37 = "38;5;37"
     /// Inline code: cyan, like the tool names.
     static let code = Style.cyan
     func apply(_ text: String) -> String { "\u{1B}[\(rawValue)m\(text)\u{1B}[0m" }

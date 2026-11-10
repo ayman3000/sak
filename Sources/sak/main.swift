@@ -222,32 +222,48 @@ func printJSON(_ outcome: RunOutcome, code: Int32, session: Session) {
 
 // MARK: - Chat
 
+/// "asks before changes", "read-only" or "auto mode" — for the panel and the status rule.
 @MainActor
-func banner() {
-    let c = session.choice
-    var flags: [String] = []
-    if session.options.autoApprove { flags.append("auto mode — nothing asks") }
-    if session.options.readOnly { flags.append("read-only") }
-    if session.tools.contains(where: { $0.name == "web_search" }) { flags.append("web search") }
-    console.out(console.styled("sak \(version)", .bold) + console.styled("  ·  \(c.model) (\(c.provider.displayName))", .magenta))
-    console.out(console.styled("\(cwd.path)\(flags.isEmpty ? "" : "  ·  " + flags.joined(separator: " · "))", .dim))
-    if !settings.loadedFiles.isEmpty {
-        console.out(console.styled("settings: \(settings.loadedFiles.joined(separator: ", "))", .dim))
-    }
-    if let notes = session.context.summaryLine {
-        console.out(console.styled(notes, .dim))
-    }
-    for line in session.mcp.lines { console.out(console.styled(line, line.contains("couldn't") ? .yellow : .dim)) }
-    console.out(console.styled("/help for commands · Ctrl-C stops a request · Ctrl-D quits", .dim))
+func modeLabel() -> String {
+    session.options.readOnly ? "read-only" : session.options.autoApprove ? "auto mode" : "asks before changes"
 }
 
-banner()
+@MainActor
+func banner() async {
+    let c = session.choice
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    var notes: [(label: String, value: String)] = []
+    if session.context.notesDirectory != nil { notes.append(("notes", "naseem/ (shared with Naseem)")) }
+    for file in settings.loadedFiles { notes.append(("config", Welcome.shortPath(file, home: home, max: 26))) }
+    let skills = ((try? await session.context.skillStore?.loadAll()) ?? []).map(\.name).sorted()
+    let info = Welcome.Info(
+        version: version, model: c.model, provider: c.provider.displayName,
+        folder: Welcome.shortPath(cwd.path, home: home, max: 24), branch: Welcome.gitBranch(in: cwd),
+        mode: modeLabel(), window: session.window.tokens, notes: notes,
+        toolGroups: Welcome.group(tools: session.tools.map(\.name), mcpServerOf: session.mcp.serverOf),
+        toolCount: session.tools.count, skills: skills,
+        warnings: session.mcp.lines.filter { $0.contains("couldn't") || $0.contains("sign-in") })
+    for line in Welcome.panel(info, width: Console.width, color: Console.stdoutColor) { console.out(line) }
+}
+
+/// The rule above the prompt: model, how full the context is, folder, mode.
+@MainActor
+func statusRule() async -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    return Welcome.statusRule(
+        model: session.choice.model, used: await session.agent.lastPromptTokens, window: session.window.tokens,
+        folder: cwd.lastPathComponent, branch: Welcome.gitBranch(in: cwd),
+        mode: modeLabel(), width: Console.width, color: Console.stdoutColor)
+}
+
+await banner()
 LineEditor.start()
 let commands = Commands(session: session)
 
 chat: while true {
     console.out("")
-    guard var line = LineEditor.readLine(prompt: "› ") else { break }
+    console.out(await statusRule())
+    guard var line = LineEditor.readLine(prompt: "❯ ") else { break }
     // A trailing backslash continues the request on the next line.
     while line.hasSuffix("\\") {
         line.removeLast()

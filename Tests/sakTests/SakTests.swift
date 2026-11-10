@@ -222,3 +222,73 @@ struct SessionTests {
         #expect(resolveChoice(Arguments(provider: .openai), settings: env, saved: nil).model == ProviderKind.openai.defaultModel, "SAK_MODEL belongs to SAK_PROVIDER")
     }
 }
+
+struct WelcomeTests {
+    private func info(skills: Int = 14) -> Welcome.Info {
+        Welcome.Info(
+            version: "0.3.0-alpha", model: "kimi-k2.6:cloud", provider: "Ollama",
+            folder: "~/projects/a-rather-long-folder-name/app", branch: "feature/a-long-branch-name",
+            mode: "asks before changes", window: 262_144,
+            notes: [("config", "~/.config/sak/.env")],
+            toolGroups: Welcome.group(
+                tools: ["read_file", "list_dir", "run_shell", "web_search", "use_skill", "custom_tool", "click", "list_pages"],
+                mcpServerOf: ["click": "chrome_devtools", "list_pages": "chrome_devtools"]),
+            toolCount: 8, skills: (1...max(1, skills)).map { "skill-number-\($0)" }.prefix(skills).map { $0 },
+            warnings: ["docs: couldn't connect"])
+    }
+
+    private func visibleWidth(_ line: String) -> Int {
+        line.replacingOccurrences(of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression).count
+    }
+
+    @Test func everyPanelRowIsExactlyAsWideAsTheBox() {
+        for width in [30, 44, 60, 75, 76, 80, 100, 104, 200] {
+            for color in [false, true] {
+                let lines = Welcome.panel(info(), width: width, color: color)
+                let expected = max(44, min(width, 104))
+                for line in lines { #expect(visibleWidth(line) == expected, "width \(width), color \(color): \(line)") }
+                #expect(lines.first?.contains("sak 0.3.0-alpha") == true)
+            }
+        }
+    }
+
+    @Test func withoutColourThePanelHasNoEscapeCodes() {
+        #expect(!Welcome.panel(info(), width: 100, color: false).joined().contains("\u{1B}"))
+        #expect(!Welcome.statusRule(model: "m", used: 10, window: 100, folder: "f", branch: nil, mode: "read-only",
+                                    width: 80, color: false).contains("\u{1B}"))
+    }
+
+    @Test func thePanelSaysWhatTheAgentHas() {
+        let text = Welcome.panel(info(), width: 104, color: false).joined(separator: "\n")
+        #expect(text.contains("kimi-k2.6:cloud"))
+        #expect(text.contains("chrome_devtools (2 tools)"))
+        #expect(text.contains("custom_tool"))
+        #expect(text.contains("8 tools · 14 skills"))
+        #expect(text.contains("couldn't connect"))
+        #expect(Welcome.panel(info(skills: 0), width: 104, color: false).joined().contains("Skills") == false)
+    }
+
+    @Test func theStatusRuleFillsTheWidthAndShowsHowFullTheContextIs() {
+        let rule = Welcome.statusRule(model: "kimi", used: 131_072, window: 262_144, folder: "app", branch: "main",
+                                      mode: "asks before changes", width: 90, color: false)
+        #expect(rule.count == 90)
+        #expect(rule.contains("ctx 131K/262K ▰▰▰▰▰▱▱▱▱▱ 50%"))
+        #expect(rule.contains("app (main)"))
+        // Too narrow for everything: cut to the width, never wrapped.
+        #expect(Welcome.statusRule(model: "kimi", used: 0, window: 0, folder: "app", branch: nil, mode: "read-only",
+                                   width: 30, color: false).count == 30)
+    }
+
+    @Test func numbersAndNamesAreShortened() {
+        #expect(Welcome.short(950) == "950")
+        #expect(Welcome.short(7234) == "7.2K")
+        #expect(Welcome.short(8000) == "8K")
+        #expect(Welcome.short(262_144) == "262K")
+        #expect(Welcome.short(1_000_000) == "1M")
+        #expect(Welcome.wrap(["a", "b", "c"], width: 20, maxLines: 2) == ["a, b, c"])
+        #expect(Welcome.wrap(["alpha", "beta", "gamma", "delta", "epsilon"], width: 14, maxLines: 2) == ["alpha, beta,", "gamma, +2 more"])
+        for row in Welcome.wrap((1...30).map { "name\($0)" }, width: 25, maxLines: 3) { #expect(row.count <= 25) }
+        #expect(Welcome.shortPath("/Users/me/projects/x", home: "/Users/me") == "~/projects/x")
+        #expect(Welcome.shortPath("/Users/me/a/very/long/path/to/some/deep/project/folder", home: "/Users/me", max: 20) == "~/…/project/folder")
+    }
+}
