@@ -342,9 +342,30 @@ struct WelcomeTests {
         // More matches than rows: the last row says how many are left.
         let few = SlashMenu.rows(for: all, width: 100, maxRows: 5, color: false)
         #expect(few.count == 5)
-        #expect(few.last == "  … \(all.count - 4) more — keep typing")
+        #expect(few.last == "  … \(all.count - 4) more — ↑↓ or keep typing")
         #expect(SlashMenu.rows(for: [], width: 100, color: false).isEmpty)
         #expect(!SlashMenu.rows(for: all, width: 100, color: false).joined().contains("\u{1B}"))
+    }
+
+    @Test func arrowsMoveTheSelectionAndTheRowsFollow() {
+        #expect(SlashMenu.moved(0, by: 1, count: 3) == 1)
+        #expect(SlashMenu.moved(2, by: 1, count: 3) == 0, "down from the last row wraps to the first")
+        #expect(SlashMenu.moved(0, by: -1, count: 3) == 2, "up from the first row wraps to the last")
+        #expect(SlashMenu.moved(0, by: 1, count: 0) == 0)
+
+        let all = SlashMenu.matches(for: "/", in: commands)
+        let rows = SlashMenu.rows(for: all, selected: 3, width: 100, maxRows: 16, color: false)
+        #expect(rows[0].hasPrefix("  /model"))
+        #expect(rows[3].hasPrefix("❯ /tools"))
+        #expect(rows.filter { $0.hasPrefix("❯") }.count == 1)
+
+        // More matches than rows: the rows shown move so the selected one stays in view.
+        let window = SlashMenu.rows(for: all, selected: all.count - 1, width: 100, maxRows: 5, color: false)
+        #expect(window.count == 5)
+        #expect(window[3].hasPrefix("❯ /exit"))
+        #expect(window[0].hasPrefix("  /resume"))
+        let top = SlashMenu.rows(for: all, selected: 0, width: 100, maxRows: 5, color: false)
+        #expect(top[0].hasPrefix("❯ /model"))
     }
 
     @Test func drawingMakesRoomClearsAndComesBack() {
