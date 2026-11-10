@@ -45,6 +45,33 @@ The `DateParser` was failing because its `DateFormatter` format string used `hh:
 The `DateParserTests` now pass.
 ```
 
+## What it does
+
+- **Reads and changes code in one folder**: lists, searches and reads files, edits them in place (search-and-replace, never a rewrite you didn't see), writes new ones, runs build and test commands, fetches web pages, and searches the web with a Tavily key. File tools can't leave the folder you started in.
+- **Asks before anything that changes something** — an edit, a shell command, an MCP tool that acts. Reads never ask. One keystroke approves a tool, a whole MCP server, or everything for the session.
+- **Works with your MCP servers**: a browser (chrome-devtools), a database, a docs server — from `mcp.json` or, if you use Naseem, the servers you already set up there.
+- **Any model you have**: Ollama (local or cloud), Anthropic, OpenAI, Gemini, OpenRouter; switch mid-conversation and keep the context.
+- **Runs unattended**: one request from a script or CI, JSON out, exit codes that mean something; `--read-only` for reviews, `--auto` for pipelines you trust.
+- **Remembers per folder**: `sak -c` continues the last conversation in this folder; with Naseem it shares project notes and skills.
+
+## Why a terminal agent
+
+- **Where the work already is.** Build output, test failures, git — pipe them straight in: `swift test 2>&1 | sak "why does this fail?"`. No copy-paste into a chat window.
+- **Small prompts, fast turns.** sak sends the model a short system prompt, seven tool schemas and the files it actually read — not a transcript of everything. On the same tasks and the same model, that was a third to a quarter of the tokens of the larger agents and correspondingly faster (see *Measured*).
+- **Scriptable.** It composes like any Unix tool: pre-commit hooks, CI steps, a nightly review, or another agent calling it.
+- **Readable.** About 1,400 lines of Swift on a public engine: you can see exactly what runs in your folder.
+
+## Use cases
+
+- *Fix this failing test* — the session above: find, read, edit, run the test, report.
+- *Review before I commit* — `git diff --cached | sak --read-only "bugs? one paragraph"`.
+- *Explain this codebase to me* — `sak -r "how does the sync layer work? files and flow"`.
+- *Small, well-defined changes* — add a flag, rename safely, write the missing test, update a README from the code.
+- *Front-end checks with a browser* — with chrome-devtools: open the local page, read the console, click through a flow.
+- *Batch work in CI* — label issues, lint prose, generate a changelog, each as one `sak --json` call.
+
+Not (yet) a good fit: a multi-day refactor across a large codebase, work that needs a plan you review first, or anything where the tests themselves are the question — see *Status and limits*.
+
 ## Install
 
 Requires macOS 14+ and Swift 6.2 (Xcode 26).
@@ -141,6 +168,20 @@ When nobody is there to approve a change, `sak` stops instead of trying somethin
 | 4 | hit the turn limit (`--turns`) |
 | 130 | stopped with Ctrl-C |
 
+### From another agent — Claude Code, Naseem, your own scripts
+
+sak is a command, so any agent that can run commands can use it as a worker: a second opinion, a parallel task in another folder, or a cheap model doing the mechanical part.
+
+```bash
+# Claude Code (or anything with a shell) asks sak for a read-only review and gets one JSON object back
+sak --read-only --json -q "Review this repository for obvious bugs; list file:line and a sentence each."
+
+# a trusted pipeline: let sak make the change, with the result and exit code to act on
+SAK_AUTO=1 sak --json -q "Add a --version flag that prints the version from Package.swift, with a test."
+```
+
+Rules that make this safe to automate: `--read-only` has no edit or shell tools at all; without `--auto`/`SAK_AUTO=1` a change that needs approval **stops** (exit 3) instead of trying another way; `--json` always returns one object with `ok`, `exit_code`, `response`, `usage`, and never a prompt; nothing is read from stdin when stdin is idle.
+
 A pre-commit review, for example:
 
 ```bash
@@ -226,9 +267,34 @@ For the iOS Simulator, Mac app control, sub-agents and a reviewer in a real Mac 
 
 The engine's own examples are in [SwiftAgentKit/Examples](https://github.com/ayman3000/SwiftAgentKit/tree/main/Examples).
 
-## Status
+## Measured
 
-`sak` is **alpha** (0.3.0-alpha). Commands, flags and the `--json` fields may change before 1.0. It's been tested day to day with Ollama; CI builds it and runs its tests on every change, and `make smoke` runs three real requests against a model. The Anthropic, OpenAI, Gemini and OpenRouter providers use the same code but have had less real-world testing. Please [report anything that breaks](https://github.com/ayman3000/sak/issues).
+On an internal benchmark of six coding tasks (Swift, Python, TypeScript, one React app from scratch; hidden tests grade the result), run the same day on the same model:
+
+| | kimi-k2.6:cloud (Ollama Cloud, no prompt caching) | Claude Haiku 5.5 (Anthropic API) |
+|---|---|---|
+| sak | 10/12 pass · 1,013 s total · 89K tokens in (median) | 6/6 · 274 s · 599K in (total) |
+| Claude Code | 10/12 · 2,691 s · 308K in — *different day* | 5/6 · 356 s · 2.27M in |
+| Hermes | 12/12 · 4,173 s · 155K in — *different day* | — |
+
+On the three tasks re-run the same day on kimi, sak was 1.2–2× faster than Claude Code and Hermes with a third to a quarter of the tokens; with Anthropic's prompt caching the time gap narrows to about 1.3× and the token gap stays. Small tasks, one person's harness, your mileage will vary — the point is the shape: fewer tokens per call, fewer calls. Both failures were the model editing a protected test or papering over a test environment; the prompt now forbids the first.
+
+## Status and limits
+
+`sak` is **alpha** (0.3.0-alpha). Commands, flags and the `--json` fields may change before 1.0. CI builds it and runs its tests on every change; `make smoke` runs three real requests against a model. Tested day to day with Ollama; Anthropic and OpenAI through the benchmark; Gemini and OpenRouter use the same code with less real-world time.
+
+What it doesn't do yet, honestly:
+
+- **No plan step.** It reads, then acts; there is no plan you approve first. For a big change, ask for the plan as a question (`-r`) before asking for the change.
+- **No sandbox for shell commands.** They run as you, after you approve them (or always, with `--auto`). File tools are confined to the folder; shell commands are not.
+- **Keys in `.env` are readable** by a shell command you approve, like any file. Keep keys in `~/.config/sak/.env`, not in a project.
+- **It can still touch tests you asked it to make pass** — the prompt forbids it, models sometimes do it anyway. Protected tests in a hidden copy are the real guard.
+- **One conversation per folder** with `-c`; no branching, no sharing across machines.
+- **Tokens, not dollars**: `/usage` shows counts, not cost.
+- **MCP servers cost tokens**: every server's tool schemas ride along on every request; a browser server is a few thousand tokens per call. List the ones you use.
+- **macOS only**, Swift 6.2 to build; no Homebrew formula yet (coming).
+
+Please [report anything that breaks](https://github.com/ayman3000/sak/issues).
 
 ## License
 
